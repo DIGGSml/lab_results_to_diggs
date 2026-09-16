@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab Results to DIGGS</title>
+<meta name="description" content="Convert laboratory soil test results from an Excel workbook into DIGGS 3.0 XML. Runs offline in your browser.">
+<!-- DISCLAIMER_COMMENT -->
+<style>
+    /* APP_CSS */
+</style>
+</head>
+<body>
+<div id="update-banner" class="banner" hidden>
+  <span>A newer version of this tool is available.</span>
+  <a href="https://diggs.geosetta.org/?tool=lab_diggs_builder" target="_blank" rel="noopener">Download it</a>
+  <button type="button" id="update-dismiss" aria-label="Dismiss">&times;</button>
+</div>
+
+<header class="page-head">
+  <div class="wrap">
+    <h1>Lab Results <span class="arrow">&rarr;</span> DIGGS</h1>
+    <p class="sub">Turn laboratory soil test results into a DIGGS 3.0 XML file. Everything below works offline on your computer. Nothing is uploaded unless you press one of the optional online buttons.</p>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="card" id="step-templates">
+    <h2><span class="num">1</span>Fill in the workbook</h2>
+    <p>The Excel workbook has a sheet for the project, the borings, the samples and each test. Every results row names the boring, the sample and its depth, so results on different sheets join up by <code>boring_id</code> + <code>sample_id</code>. Fill in only the sheets for the tests you ran.</p>
+    <div class="actions">
+      <button type="button" id="dl-workbook" class="btn primary">Download the workbook (.xlsx)</button>
+      <button type="button" id="dl-workbook-example" class="btn">Workbook with example rows</button>
+      <button type="button" id="load-example" class="btn ghost">Try it with example data</button>
+    </div>
+    <p class="note">The workbook is created by this page. It opens in Excel, LibreOffice and Google Sheets; keep it as .xlsx when you save.</p>
+    <details class="help">
+      <summary>What goes on each sheet</summary>
+      <div class="table-scroll">
+        <table class="templates" id="template-table">
+          <thead><tr><th>Sheet</th><th>Method</th><th>Columns (* required)</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div id="column-help"></div>
+    </details>
+    <details class="help">
+      <summary>Prefer CSV files?</summary>
+      <p>Each sheet can also be supplied as its own CSV file with the same header row. Name the file after the sheet (for example <code>gradation.csv</code>) or keep the headers, and the page recognises it.</p>
+      <div class="actions">
+        <button type="button" id="dl-all-templates" class="btn small">CSV templates (.zip)</button>
+        <button type="button" id="dl-all-examples" class="btn small ghost">CSV templates with example rows (.zip)</button>
+      </div>
+    </details>
+  </section>
+
+  <section class="card" id="step-project">
+    <h2><span class="num">2</span>Project and units</h2>
+    <p class="note">Filled in from the workbook's Project sheet when you add it. You can change them here.</p>
+    <div class="grid">
+      <label>Project name <span class="req">*</span><input id="projectName" type="text" autocomplete="off" placeholder="e.g. Route 9 Bridge Replacement"></label>
+      <label>Project number<input id="projectNumber" type="text" autocomplete="off"></label>
+      <label>Client<input id="client" type="text" autocomplete="off"></label>
+      <label>Laboratory<input id="labName" type="text" autocomplete="off" placeholder="Your lab's name"></label>
+      <label>Depth and elevation unit
+        <select id="depthUnit"><option value="ft">feet</option><option value="m">meters</option></select>
+      </label>
+      <label>Density unit
+        <select id="densityUnit"></select>
+      </label>
+    </div>
+    <p class="note">Values are written exactly as entered, labelled with these units. Water content, limits, percent passing and organic content are percent. Particle sizes are mm. Resistivity is ohm-cm. Sulfate and chloride are ppm.</p>
+  </section>
+
+  <section class="card" id="step-files">
+    <h2><span class="num">3</span>Add your filled-in workbook</h2>
+    <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Choose a workbook or CSV files">
+      <strong>Drop your workbook here</strong> or click to choose it
+      <span class="note">.xlsx workbooks and .csv files are read on this computer. Nothing is uploaded.</span>
+      <input id="file-input" type="file" accept=".xlsx,.xlsm,.csv,.txt,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple hidden>
+    </div>
+    <div class="table-scroll">
+      <table id="file-table" class="files" hidden>
+        <thead><tr><th>Sheet or file</th><th>Read as</th><th>Rows</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card" id="step-borings" hidden>
+    <h2><span class="num">4</span>Boring locations</h2>
+    <p>DIGGS needs a latitude and longitude (WGS84 decimal degrees) for every boring. Ground elevation is strongly recommended. Values from the Borings sheet are filled in; you can type or correct them here.</p>
+    <div class="table-scroll">
+      <table id="boring-table" class="borings">
+        <thead><tr><th>Boring</th><th>Latitude</th><th>Longitude</th><th>Ground elev.</th><th>Total depth</th><th>Date drilled</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card" id="step-build">
+    <h2><span class="num">5</span>Build the DIGGS file</h2>
+    <div id="summary" class="summary"><p class="muted">Add your filled-in workbook to begin.</p></div>
+    <div id="messages"></div>
+    <div class="actions">
+      <button type="button" id="dl-xml" class="btn primary" disabled>Download DIGGS XML</button>
+      <label class="inline">File name <input id="outName" type="text" value="lab_results_diggs"></label>
+    </div>
+    <details class="help" id="preview-wrap" hidden>
+      <summary>Preview the XML</summary>
+      <pre id="preview"></pre>
+    </details>
+  </section>
+
+  <section class="card" id="step-online">
+    <h2><span class="num">6</span>Optional online steps</h2>
+    <p>These buttons send the generated XML to <strong>diggs.geosetta.org</strong> and need an internet connection. The file is processed in memory and not stored.</p>
+    <div class="actions">
+      <button type="button" id="btn-validate" class="btn" disabled>Check the file online</button>
+      <button type="button" id="btn-inspector" class="btn" disabled>Build a DIGGS File Inspector page</button>
+    </div>
+    <div id="online-result"></div>
+  </section>
+
+</main>
+
+<footer class="page-foot">
+  <div class="wrap">
+    <p>Lab Results to DIGGS by <a href="https://geosetta.org" target="_blank" rel="noopener">Geosetta</a> for the <a href="https://diggsml.org" target="_blank" rel="noopener">DIGGS</a> community. Version <span id="tool-version">__TOOL_VERSION__</span>.</p>
+    <p><!-- DISCLAIMER_FOOTER --></p>
+  </div>
+</footer>
+
+<script>
+// CORE_JS
+</script>
+<script>
+// UI_JS
+</script>
+</body>
+</html>

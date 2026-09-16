@@ -1,0 +1,846 @@
+{
+ "key_columns": [
+  {
+   "name": "boring_id",
+   "required": true,
+   "doc": "Boring / test pit ID, exactly as on the logs",
+   "text": true,
+   "width": 12,
+   "lookup": "borings"
+  },
+  {
+   "name": "sample_id",
+   "required": true,
+   "doc": "Sample ID within the boring (e.g. S-3, ST-2, B-1)",
+   "text": true,
+   "width": 11
+  },
+  {
+   "name": "top_depth",
+   "required": true,
+   "doc": "Top of sample, below ground surface",
+   "min": 0
+  },
+  {
+   "name": "bottom_depth",
+   "required": false,
+   "doc": "Bottom of sample; blank for a point sample",
+   "min": 0
+  },
+  {
+   "name": "sample_type",
+   "required": false,
+   "doc": "e.g. split spoon, Shelby tube, bulk",
+   "text": true,
+   "width": 16,
+   "choices": [
+    "split spoon",
+    "Shelby tube",
+    "bulk",
+    "grab",
+    "piston",
+    "ring-lined barrel",
+    "rock core",
+    "block"
+   ],
+   "strict": false
+  }
+ ],
+ "templates": [
+  {
+   "id": "borings",
+   "title": "Borings",
+   "sheet": "Borings",
+   "astm": "",
+   "optional": true,
+   "keyed": false,
+   "notes": "Gives each boring a map location. Without latitude, longitude and elevation the file still passes the schema and codelist checks, but the business-rule check reports one geometry error per boring.",
+   "columns": [
+    {
+     "name": "boring_id",
+     "required": true,
+     "doc": "Boring ID used in the results files",
+     "text": true,
+     "width": 12
+    },
+    {
+     "name": "latitude",
+     "required": false,
+     "doc": "Decimal degrees, WGS84",
+     "min": -90,
+     "max": 90
+    },
+    {
+     "name": "longitude",
+     "required": false,
+     "doc": "Decimal degrees, WGS84 (negative for west)",
+     "min": -180,
+     "max": 180
+    },
+    {
+     "name": "ground_elevation",
+     "required": false,
+     "doc": "Ground surface elevation, NAVD88, in the depth unit"
+    },
+    {
+     "name": "total_depth",
+     "required": false,
+     "doc": "Total depth of the boring",
+     "min": 0
+    },
+    {
+     "name": "date_drilled",
+     "required": false,
+     "doc": "YYYY-MM-DD",
+     "text": true,
+     "width": 13
+    }
+   ],
+   "examples": [
+    [
+     "B-1",
+     "35.780200",
+     "-78.640100",
+     "310.5",
+     "30",
+     "2026-06-01"
+    ],
+    [
+     "B-2",
+     "35.780700",
+     "-78.639600",
+     "308.2",
+     "25",
+     "2026-06-02"
+    ]
+   ]
+  },
+  {
+   "id": "samples",
+   "title": "Samples",
+   "sheet": "Samples",
+   "astm": "",
+   "optional": true,
+   "keyed": true,
+   "notes": "Lists samples received, including ones with no tests. Samples in the results files are added automatically.",
+   "columns": [],
+   "examples": [
+    [
+     "B-1",
+     "S-1",
+     "2.5",
+     "4",
+     "split spoon"
+    ],
+    [
+     "B-1",
+     "ST-3",
+     "10",
+     "12",
+     "Shelby tube"
+    ]
+   ]
+  },
+  {
+   "id": "water_content",
+   "title": "Water content",
+   "sheet": "Water Content",
+   "astm": "ASTM D2216",
+   "optional": false,
+   "keyed": true,
+   "notes": "",
+   "columns": [
+    {
+     "name": "water_content_pct",
+     "required": true,
+     "doc": "Water content, %",
+     "min": 0
+    },
+    {
+     "name": "drying_temperature_c",
+     "required": false,
+     "doc": "Oven temperature, degC"
+    }
+   ],
+   "examples": [
+    [
+     "B-1",
+     "S-1",
+     "2.5",
+     "4",
+     "split spoon",
+     "12.4",
+     "110"
+    ],
+    [
+     "B-1",
+     "S-2",
+     "5",
+     "6.5",
+     "split spoon",
+     "18.9",
+     ""
+    ]
+   ]
+  },
+  {
+   "id": "atterberg_limits",
+   "title": "Atterberg limits",
+   "sheet": "Atterberg Limits",
+   "astm": "ASTM D4318",
+   "optional": false,
+   "keyed": true,
+   "notes": "",
+   "columns": [
+    {
+     "name": "liquid_limit",
+     "required": false,
+     "doc": "LL (whole number)",
+     "min": 0
+    },
+    {
+     "name": "plastic_limit",
+     "required": false,
+     "doc": "PL (whole number), or NP",
+     "text": true
+    },
+    {
+     "name": "plasticity_index",
+     "required": false,
+     "doc": "PI; blank = LL - PL",
+     "min": 0
+    },
+    {
+     "name": "non_plastic",
+     "required": false,
+     "doc": "TRUE when the soil is non-plastic",
+     "choices": [
+      "TRUE",
+      "FALSE"
+     ],
+     "strict": true
+    },
+    {
+     "name": "preparation",
+     "required": false,
+     "doc": "wet or dry",
+     "choices": [
+      "wet",
+      "dry"
+     ],
+     "strict": true
+    },
+    {
+     "name": "ll_method",
+     "required": false,
+     "doc": "multipoint or one_point",
+     "choices": [
+      "multipoint",
+      "one_point"
+     ],
+     "strict": true
+    }
+   ],
+   "examples": [
+    [
+     "B-1",
+     "S-2",
+     "5",
+     "6.5",
+     "split spoon",
+     "32",
+     "19",
+     "",
+     "",
+     "wet",
+     "multipoint"
+    ],
+    [
+     "B-1",
+     "S-6",
+     "27.5",
+     "29",
+     "split spoon",
+     "",
+     "NP",
+     "",
+     "TRUE",
+     "",
+     ""
+    ]
+   ]
+  },
+  {
+   "id": "wash_200",
+   "title": "Wash No. 200",
+   "sheet": "Wash 200",
+   "astm": "ASTM D1140",
+   "optional": false,
+   "keyed": true,
+   "notes": "",
+   "columns": [
+    {
+     "name": "percent_passing_200",
+     "required": true,
+     "doc": "Percent passing the No. 200 sieve",
+     "min": 0,
+     "max": 100
+    }
+   ],
+   "examples": [
+    [
+     "B-1",
+     "S-1",
+     "2.5",
+     "4",
+     "split spoon",
+     "34.0"
+    ]
+   ]
+  },
+  {
+   "id": "gradation",
+   "title": "Gradation (sieve + hydrometer)",
+   "sheet": "Gradation",
+   "astm": "ASTM D6913 / D7928 / D422, USCS D2487",
+   "optional": false,
+   "keyed": true,
+   "notes": "One row per sieve or hydrometer point. Percent gravel, sand, silt, clay, D-values, Cu, Cc and the USCS classification are computed; USCS also uses the Atterberg limits of the same sample.",
+   "columns": [
+    {
+     "name": "standard",
+     "required": false,
+     "doc": "Blank = D6913 (+ D7928 hydrometer); or D422",
+     "choices": [
+      "D6913",
+      "D422"
+     ],
+     "strict": true
+    },
+    {
+     "name": "method",
+     "required": true,
+     "doc": "sieve or hydrometer",
+     "choices": [
+      "sieve",
+      "hydrometer"
+     ],
+     "strict": true
+    },
+    {
+     "name": "sieve",
+     "required": false,
+     "doc": "Sieve designation, e.g. No. 40 or 3/4 in",
+     "text": true,
+     "width": 11,
+     "choices": [
+      "3 in",
+      "2 in",
+      "1-1/2 in",
+      "1 in",
+      "3/4 in",
+      "1/2 in",
+      "3/8 in",
+      "No. 4",
+      "No. 10",
+      "No. 20",
+      "No. 40",
+      "No. 60",
+      "No. 100",
+      "No. 140",
+      "No. 200"
+     ],
+     "strict": false
+    },
+    {
+     "name": "particle_size_mm",
+     "required": false,
+     "doc": "Opening or particle diameter, mm (required for hydrometer rows)",
+     "min": 0
+    },
+    {
+     "name": "percent_passing",
+     "required": true,
+     "doc": "Percent passing / finer",
+     "min": 0,
+     "max": 100
+    },
+    {
+     "name": "uscs_symbol",
+     "required": false,
+     "doc": "Optional reported USCS symbol (overrides the computed one)",
+     "text": true
+    },
+    {
+     "name": "uscs_group_name",
+     "required": false,
+     "doc": "Optional reported USCS group name",
+     "text": true,
+     "width": 30
+    }
+   ],
+   "examples": [
+    [
+     "B-1",
+     "S-2",
+     "5",
+     "6.5",
+     "split spoon",
+     "",
+     "sieve",
+     "3/4 in",
+     "19",
+     "100",
+     "",
+     ""
+    ],
+    [
+     "B-1",
+     "S-2",
+     "5",
+     "6.5",
+     "split spoon",
+     "",
+     "sieve",
+     "No. 4",
+     "4.75",
+     "99.1",
+     "",
+     ""
+    ],
+    [
+     "B-1",
+     "S-2",
+     "5",
+     "6.5",
+     "split spoon",
+     "",
+     "sieve",
+     "No. 10",
+     "2",
+     "97.6",
+     "",
+     ""
+    ],
+    [
+     "B-1",
+     "S-2",
+     "5",
+     "6.5",
+     "split spoon",
+     "",
+     "sieve",
+     "No. 40",
+     "0.425",
+     "90.8",
+     "",
+     ""
+    ],
+    [
+     "B-1",
+     "S-2",
+     "5",
+     "6.5",
+     "split spoon",
+     "",
+     "sieve",
+     "No. 200",
+     "0.075",
+     "74.6",
+     "",
+     ""
+    ],
+    [
+     "B-1",
+     "S-2",
+     "5",
+     "6.5",
+     "split spoon",
+     "",
+     "hydrometer",
+     "",
+     "0.02",
+     "52.4",
+     "",
+     ""
+    ],
+    [
+     "B-1",
+     "S-2",
+     "5",
+     "6.5",
+     "split spoon",
+     "",
+     "hydrometer",
+     "",
+     "0.005",
+     "33.5",
+     "",
+     ""
+    ],
+    [
+     "B-1",
+     "S-2",
+     "5",
+     "6.5",
+     "split spoon",
+     "",
+     "hydrometer",
+     "",
+     "0.002",
+     "24.2",
+     "",
+     ""
+    ]
+   ]
+  },
+  {
+   "id": "specific_gravity",
+   "title": "Specific gravity",
+   "sheet": "Specific Gravity",
+   "astm": "ASTM D854",
+   "optional": false,
+   "keyed": true,
+   "notes": "",
+   "columns": [
+    {
+     "name": "specific_gravity",
+     "required": true,
+     "doc": "Specific gravity of soil solids",
+     "min": 1,
+     "max": 5
+    },
+    {
+     "name": "water_temperature_c",
+     "required": false,
+     "doc": "Test temperature, degC (default 20)"
+    }
+   ],
+   "examples": [
+    [
+     "B-1",
+     "S-2",
+     "5",
+     "6.5",
+     "split spoon",
+     "2.68",
+     "20"
+    ]
+   ]
+  },
+  {
+   "id": "unit_weight",
+   "title": "Unit weight / dry density",
+   "sheet": "Unit Weight",
+   "astm": "ASTM D7263",
+   "optional": false,
+   "keyed": true,
+   "notes": "",
+   "columns": [
+    {
+     "name": "moist_density",
+     "required": false,
+     "doc": "Moist (bulk) density, in the density unit",
+     "min": 0
+    },
+    {
+     "name": "dry_density",
+     "required": false,
+     "doc": "Dry density; blank = computed from moist density and water content",
+     "min": 0
+    },
+    {
+     "name": "water_content_pct",
+     "required": false,
+     "doc": "Water content of the specimen, %; blank = the sample water content",
+     "min": 0
+    }
+   ],
+   "examples": [
+    [
+     "B-1",
+     "ST-3",
+     "10",
+     "12",
+     "Shelby tube",
+     "122.6",
+     "",
+     "24.1"
+    ]
+   ]
+  },
+  {
+   "id": "organic_content",
+   "title": "Organic content",
+   "sheet": "Organic Content",
+   "astm": "ASTM D2974",
+   "optional": false,
+   "keyed": true,
+   "notes": "",
+   "columns": [
+    {
+     "name": "organic_content_pct",
+     "required": true,
+     "doc": "Organic content (loss on ignition), %",
+     "min": 0,
+     "max": 100
+    },
+    {
+     "name": "ignition_temperature_c",
+     "required": false,
+     "doc": "Furnace temperature, degC (default 440)"
+    }
+   ],
+   "examples": [
+    [
+     "B-1",
+     "S-5",
+     "20",
+     "21.5",
+     "split spoon",
+     "7.8",
+     "440"
+    ]
+   ]
+  },
+  {
+   "id": "compaction",
+   "title": "Proctor compaction",
+   "sheet": "Compaction",
+   "astm": "ASTM D698 / D1557",
+   "optional": false,
+   "keyed": true,
+   "notes": "One row per trial point. The maximum dry density and optimum water content are fitted (parabola through the peak) unless you report them.",
+   "columns": [
+    {
+     "name": "effort",
+     "required": true,
+     "doc": "standard (D698) or modified (D1557)",
+     "choices": [
+      "standard",
+      "modified"
+     ],
+     "strict": true
+    },
+    {
+     "name": "trial",
+     "required": false,
+     "doc": "Trial number",
+     "min": 1
+    },
+    {
+     "name": "water_content_pct",
+     "required": false,
+     "doc": "Trial water content, %",
+     "min": 0
+    },
+    {
+     "name": "dry_density",
+     "required": false,
+     "doc": "Trial dry density, in the density unit",
+     "min": 0
+    },
+    {
+     "name": "max_dry_density",
+     "required": false,
+     "doc": "Reported maximum dry density (blank = fitted from the trials)",
+     "min": 0
+    },
+    {
+     "name": "optimum_water_content",
+     "required": false,
+     "doc": "Reported optimum water content, % (blank = fitted)",
+     "min": 0
+    },
+    {
+     "name": "specific_gravity",
+     "required": false,
+     "doc": "Specific gravity used for the zero-air-voids line",
+     "min": 1,
+     "max": 5
+    }
+   ],
+   "examples": [
+    [
+     "B-1",
+     "B-1",
+     "0",
+     "5",
+     "bulk",
+     "standard",
+     "1",
+     "11.8",
+     "109.6",
+     "",
+     "",
+     ""
+    ],
+    [
+     "B-1",
+     "B-1",
+     "0",
+     "5",
+     "bulk",
+     "standard",
+     "2",
+     "13.9",
+     "112.8",
+     "",
+     "",
+     ""
+    ],
+    [
+     "B-1",
+     "B-1",
+     "0",
+     "5",
+     "bulk",
+     "standard",
+     "3",
+     "15.8",
+     "114.1",
+     "",
+     "",
+     ""
+    ],
+    [
+     "B-1",
+     "B-1",
+     "0",
+     "5",
+     "bulk",
+     "standard",
+     "4",
+     "17.9",
+     "112.3",
+     "",
+     "",
+     ""
+    ],
+    [
+     "B-1",
+     "B-1",
+     "0",
+     "5",
+     "bulk",
+     "standard",
+     "5",
+     "20.1",
+     "108.7",
+     "",
+     "",
+     ""
+    ]
+   ]
+  },
+  {
+   "id": "corrosion",
+   "title": "Corrosion suite",
+   "sheet": "Corrosion",
+   "astm": "ASTM G51 / G187 / C1580 / D4327",
+   "optional": false,
+   "keyed": true,
+   "notes": "Each filled cell becomes its own test. Leave a cell blank when that test was not run.",
+   "columns": [
+    {
+     "name": "ph",
+     "required": false,
+     "doc": "pH",
+     "min": 0,
+     "max": 14
+    },
+    {
+     "name": "resistivity_ohm_cm",
+     "required": false,
+     "doc": "Minimum resistivity, ohm-cm",
+     "min": 0
+    },
+    {
+     "name": "sulfate_ppm",
+     "required": false,
+     "doc": "Water-soluble sulfate, ppm",
+     "min": 0
+    },
+    {
+     "name": "chloride_ppm",
+     "required": false,
+     "doc": "Water-soluble chloride, ppm",
+     "min": 0
+    }
+   ],
+   "examples": [
+    [
+     "B-1",
+     "B-1",
+     "0",
+     "5",
+     "bulk",
+     "6.4",
+     "4200",
+     "45",
+     "18"
+    ]
+   ]
+  }
+ ],
+ "project": {
+  "id": "project",
+  "title": "Project",
+  "sheet": "Project",
+  "fields": [
+   {
+    "key": "project_name",
+    "setting": "projectName",
+    "label": "Project name",
+    "doc": "Required. Written as the DIGGS project name.",
+    "example": "Example laboratory program"
+   },
+   {
+    "key": "project_number",
+    "setting": "projectNumber",
+    "label": "Project number",
+    "doc": "Optional.",
+    "example": "24-1057"
+   },
+   {
+    "key": "client",
+    "setting": "client",
+    "label": "Client",
+    "doc": "Optional.",
+    "example": "Example Engineering, Inc."
+   },
+   {
+    "key": "laboratory",
+    "setting": "labName",
+    "label": "Laboratory",
+    "doc": "Your laboratory name.",
+    "example": "Example Soils Laboratory"
+   },
+   {
+    "key": "depth_unit",
+    "setting": "depthUnit",
+    "label": "Depth and elevation unit",
+    "doc": "feet or meters. Applies to depths, elevations and total depth.",
+    "choices": [
+     "feet",
+     "meters"
+    ],
+    "example": "feet"
+   },
+   {
+    "key": "density_unit",
+    "setting": "densityUnit",
+    "label": "Density unit",
+    "doc": "Applies to every density and unit weight.",
+    "choices": [
+     "lbm/ft3",
+     "lbf/ft3",
+     "kg/m3",
+     "Mg/m3",
+     "g/cm3"
+    ],
+    "example": "lbm/ft3"
+   }
+  ]
+ }
+}

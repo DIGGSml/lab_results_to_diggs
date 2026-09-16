@@ -1,0 +1,2794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab Results to DIGGS</title>
+<meta name="description" content="Convert laboratory soil test results from an Excel workbook into DIGGS 3.0 XML. Runs offline in your browser.">
+<!-- Lab Results to DIGGS. MIT License. Source: https://github.com/DIGGSml/lab_results_to_diggs -->
+<style>
+:root {
+  --green-dark: #2b5b2b;
+  --green: #3a7a3a;
+  --green-light: #e8f0e8;
+  --brown-dark: #5c3d1e;
+  --brown: #8b6914;
+  --tan: #c4a265;
+  --sand: #f5f0e8;
+  --cream: #faf8f4;
+  --text: #2c2c2c;
+  --muted: #6b6b6b;
+  --border: #e0d8cc;
+  --error: #a4261d;
+  --error-bg: #fbeceb;
+  --warn: #7a5a00;
+  --warn-bg: #fff6dc;
+  --ok: #2b5b2b;
+  --ok-bg: #e8f0e8;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--cream);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+.wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+a { color: var(--green); }
+code { background: var(--sand); padding: 1px 5px; border-radius: 4px; font-size: 0.92em; }
+h1, h2 { color: var(--green-dark); }
+h1 { margin: 0 0 6px; font-size: 1.9rem; }
+h1 .arrow { color: var(--tan); }
+h2 { margin: 0 0 10px; font-size: 1.2rem; display: flex; align-items: center; gap: 10px; }
+.num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--green); color: #fff; font-size: 0.9rem; flex: none;
+}
+.page-head { background: var(--sand); border-bottom: 3px solid var(--tan); padding: 22px 0 16px; margin-bottom: 20px; }
+.sub { margin: 0; color: var(--muted); }
+.card {
+  background: #fff; border: 1px solid var(--border); border-radius: 10px;
+  padding: 18px 20px; margin-bottom: 18px;
+}
+.card p { margin: 0 0 10px; }
+.note, .muted { color: var(--muted); font-size: 0.9em; }
+.req { color: var(--error); }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 10px 0; }
+.btn {
+  appearance: none; border: 1px solid var(--green); background: #fff; color: var(--green-dark);
+  border-radius: 6px; padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer;
+}
+.btn:hover:not(:disabled) { background: var(--green-light); }
+.btn.primary { background: var(--green); color: #fff; }
+.btn.primary:hover:not(:disabled) { background: var(--green-dark); }
+.btn.ghost { border-color: var(--tan); color: var(--brown-dark); }
+.btn.small { padding: 3px 9px; font-size: 0.85em; font-weight: 500; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn.busy { cursor: progress; opacity: 0.7; }
+.linkbtn { background: none; border: none; color: var(--error); cursor: pointer; font: inherit; padding: 2px 6px; }
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { border-collapse: collapse; width: 100%; font-size: 0.92em; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { background: var(--sand); color: var(--brown-dark); font-weight: 600; white-space: nowrap; }
+td.cols { color: var(--muted); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85em; }
+td.btns { white-space: nowrap; }
+.templates td:first-child { font-weight: 600; }
+.tag { display: inline-block; font-size: 0.75em; padding: 1px 6px; border-radius: 8px; background: var(--sand); color: var(--brown-dark); margin-left: 4px; font-weight: 500; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px 16px; }
+label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 0.9em; color: var(--brown-dark); }
+label.inline { flex-direction: row; align-items: center; gap: 8px; font-weight: 500; }
+input[type=text], select {
+  font: inherit; font-weight: 400; color: var(--text); padding: 7px 9px;
+  border: 1px solid var(--border); border-radius: 6px; background: #fff; width: 100%; min-width: 0;
+}
+label.inline input { width: 200px; }
+input:focus, select:focus, .dropzone:focus { outline: 2px solid var(--tan); outline-offset: 1px; }
+.borings input { padding: 5px 7px; min-width: 90px; }
+.borings input.missing { border-color: var(--error); background: var(--error-bg); }
+.dropzone {
+  border: 2px dashed var(--tan); border-radius: 10px; background: var(--cream);
+  padding: 26px 16px; text-align: center; cursor: pointer; display: flex; flex-direction: column; gap: 6px;
+}
+.dropzone.over { background: var(--green-light); border-color: var(--green); }
+.summary { margin-bottom: 8px; }
+.stats { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; }
+.stat { background: var(--sand); border-radius: 8px; padding: 8px 14px; min-width: 110px; }
+.stat b { display: block; font-size: 1.4rem; color: var(--green-dark); }
+.kinds { color: var(--muted); font-size: 0.9em; }
+.msgbox { border-radius: 8px; padding: 10px 14px; margin: 8px 0; }
+.msgbox h3 { margin: 0 0 6px; font-size: 0.95rem; }
+.msgbox ul { margin: 0; padding-left: 20px; max-height: 260px; overflow-y: auto; }
+.msgbox li { margin: 2px 0; overflow-wrap: anywhere; }
+.msgbox.error { background: var(--error-bg); color: var(--error); }
+.msgbox.warn { background: var(--warn-bg); color: var(--warn); }
+.msgbox.ok { background: var(--ok-bg); color: var(--ok); }
+details.help { margin-top: 10px; }
+details.help summary { cursor: pointer; color: var(--green); font-weight: 600; }
+.colhelp h4 { margin: 12px 0 4px; color: var(--brown-dark); }
+.colhelp p { margin: 4px 0; }
+.colhelp dl { margin: 0; display: grid; grid-template-columns: minmax(150px, max-content) 1fr; gap: 2px 12px; font-size: 0.9em; }
+.colhelp dt { font-family: ui-monospace, Menlo, Consolas, monospace; }
+.colhelp dd { margin: 0; color: var(--muted); }
+pre#preview {
+  max-height: 360px; overflow: auto; background: var(--sand); border-radius: 6px;
+  padding: 10px; font-size: 0.8em; white-space: pre;
+}
+.banner {
+  display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap;
+  background: var(--warn-bg); color: var(--warn); padding: 8px 16px; border-bottom: 1px solid var(--tan);
+}
+.banner[hidden] { display: none; }
+.banner button { background: none; border: none; font-size: 1.3rem; cursor: pointer; color: var(--warn); }
+.page-foot { color: var(--muted); font-size: 0.85em; text-align: center; padding: 16px 0 28px; border-top: 1px solid var(--border); margin-top: 10px; }
+.page-foot p { margin: 4px 0; }
+[hidden] { display: none !important; }
+@media (max-width: 600px) {
+  h1 { font-size: 1.5rem; }
+  .card { padding: 14px; }
+  label.inline { flex-direction: column; align-items: stretch; }
+  label.inline input { width: 100%; }
+  .colhelp dl { grid-template-columns: 1fr; }
+  .colhelp dd { margin-bottom: 6px; }
+}
+@media print {
+  .actions, .dropzone, #step-online, .banner { display: none !important; }
+}
+
+</style>
+</head>
+<body>
+<div id="update-banner" class="banner" hidden>
+  <span>A newer version of this tool is available.</span>
+  <a href="https://diggs.geosetta.org/?tool=lab_diggs_builder" target="_blank" rel="noopener">Download it</a>
+  <button type="button" id="update-dismiss" aria-label="Dismiss">&times;</button>
+</div>
+
+<header class="page-head">
+  <div class="wrap">
+    <h1>Lab Results <span class="arrow">&rarr;</span> DIGGS</h1>
+    <p class="sub">Turn laboratory soil test results into a DIGGS 3.0 XML file. Everything below works offline on your computer. Nothing is uploaded unless you press one of the optional online buttons.</p>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="card" id="step-templates">
+    <h2><span class="num">1</span>Fill in the workbook</h2>
+    <p>The Excel workbook has a sheet for the project, the borings, the samples and each test. Every results row names the boring, the sample and its depth, so results on different sheets join up by <code>boring_id</code> + <code>sample_id</code>. Fill in only the sheets for the tests you ran.</p>
+    <div class="actions">
+      <button type="button" id="dl-workbook" class="btn primary">Download the workbook (.xlsx)</button>
+      <button type="button" id="dl-workbook-example" class="btn">Workbook with example rows</button>
+      <button type="button" id="load-example" class="btn ghost">Try it with example data</button>
+    </div>
+    <p class="note">The workbook is created by this page. It opens in Excel, LibreOffice and Google Sheets; keep it as .xlsx when you save.</p>
+    <details class="help">
+      <summary>What goes on each sheet</summary>
+      <div class="table-scroll">
+        <table class="templates" id="template-table">
+          <thead><tr><th>Sheet</th><th>Method</th><th>Columns (* required)</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div id="column-help"></div>
+    </details>
+    <details class="help">
+      <summary>Prefer CSV files?</summary>
+      <p>Each sheet can also be supplied as its own CSV file with the same header row. Name the file after the sheet (for example <code>gradation.csv</code>) or keep the headers, and the page recognises it.</p>
+      <div class="actions">
+        <button type="button" id="dl-all-templates" class="btn small">CSV templates (.zip)</button>
+        <button type="button" id="dl-all-examples" class="btn small ghost">CSV templates with example rows (.zip)</button>
+      </div>
+    </details>
+  </section>
+
+  <section class="card" id="step-project">
+    <h2><span class="num">2</span>Project and units</h2>
+    <p class="note">Filled in from the workbook's Project sheet when you add it. You can change them here.</p>
+    <div class="grid">
+      <label>Project name <span class="req">*</span><input id="projectName" type="text" autocomplete="off" placeholder="e.g. Route 9 Bridge Replacement"></label>
+      <label>Project number<input id="projectNumber" type="text" autocomplete="off"></label>
+      <label>Client<input id="client" type="text" autocomplete="off"></label>
+      <label>Laboratory<input id="labName" type="text" autocomplete="off" placeholder="Your lab's name"></label>
+      <label>Depth and elevation unit
+        <select id="depthUnit"><option value="ft">feet</option><option value="m">meters</option></select>
+      </label>
+      <label>Density unit
+        <select id="densityUnit"></select>
+      </label>
+    </div>
+    <p class="note">Values are written exactly as entered, labelled with these units. Water content, limits, percent passing and organic content are percent. Particle sizes are mm. Resistivity is ohm-cm. Sulfate and chloride are ppm.</p>
+  </section>
+
+  <section class="card" id="step-files">
+    <h2><span class="num">3</span>Add your filled-in workbook</h2>
+    <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Choose a workbook or CSV files">
+      <strong>Drop your workbook here</strong> or click to choose it
+      <span class="note">.xlsx workbooks and .csv files are read on this computer. Nothing is uploaded.</span>
+      <input id="file-input" type="file" accept=".xlsx,.xlsm,.csv,.txt,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple hidden>
+    </div>
+    <div class="table-scroll">
+      <table id="file-table" class="files" hidden>
+        <thead><tr><th>Sheet or file</th><th>Read as</th><th>Rows</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card" id="step-borings" hidden>
+    <h2><span class="num">4</span>Boring locations</h2>
+    <p>DIGGS needs a latitude and longitude (WGS84 decimal degrees) for every boring. Ground elevation is strongly recommended. Values from the Borings sheet are filled in; you can type or correct them here.</p>
+    <div class="table-scroll">
+      <table id="boring-table" class="borings">
+        <thead><tr><th>Boring</th><th>Latitude</th><th>Longitude</th><th>Ground elev.</th><th>Total depth</th><th>Date drilled</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card" id="step-build">
+    <h2><span class="num">5</span>Build the DIGGS file</h2>
+    <div id="summary" class="summary"><p class="muted">Add your filled-in workbook to begin.</p></div>
+    <div id="messages"></div>
+    <div class="actions">
+      <button type="button" id="dl-xml" class="btn primary" disabled>Download DIGGS XML</button>
+      <label class="inline">File name <input id="outName" type="text" value="lab_results_diggs"></label>
+    </div>
+    <details class="help" id="preview-wrap" hidden>
+      <summary>Preview the XML</summary>
+      <pre id="preview"></pre>
+    </details>
+  </section>
+
+  <section class="card" id="step-online">
+    <h2><span class="num">6</span>Optional online steps</h2>
+    <p>These buttons send the generated XML to <strong>diggs.geosetta.org</strong> and need an internet connection. The file is processed in memory and not stored.</p>
+    <div class="actions">
+      <button type="button" id="btn-validate" class="btn" disabled>Check the file online</button>
+      <button type="button" id="btn-inspector" class="btn" disabled>Build a DIGGS File Inspector page</button>
+    </div>
+    <div id="online-result"></div>
+  </section>
+
+</main>
+
+<footer class="page-foot">
+  <div class="wrap">
+    <p>Lab Results to DIGGS by <a href="https://geosetta.org" target="_blank" rel="noopener">Geosetta</a> for the <a href="https://diggsml.org" target="_blank" rel="noopener">DIGGS</a> community. Version <span id="tool-version">4f9e7b9f3b2a</span>.</p>
+    <p>Open-source software under the MIT License, provided as-is. You are responsible for checking the files it produces. <a href="https://github.com/DIGGSml/lab_results_to_diggs" target="_blank" rel="noopener">Source code</a>.</p>
+  </div>
+</footer>
+
+<script>
+/*
+ * Lab Results -> DIGGS: core logic (no DOM).
+ *
+ * Mirrors the Python Lab Standard encoder (certification/tools/flavors/lab.py
+ * lab_to_diggs + core/vlm_to_diggs.py borehole skeleton), so files built here
+ * pass the same XSD + codelist + business-rule checks as the certification
+ * reference. Keep the two in step when either changes.
+ *
+ * Loaded inline in the standalone HTML, and by node for the test harness
+ * (test_lab_diggs_builder.py) through module.exports at the bottom.
+ */
+var LabDiggs = (function () {
+  'use strict';
+
+  var NS_DIGGS = 'http://diggsml.org/schemas/3';
+  var PROPS = 'https://diggsml.org/def/codes/DIGGS/0.1/properties.xml';
+  var ROLES = 'https://diggsml.org/def/codes/DIGGS/0.1/roles.xml';
+  var EPSG = 'http://www.opengis.net/def/crs/EPSG/0/';
+  // Compound CRS: EPSG:4326 horizontal + NAVD88 height (6360 = US survey ft,
+  // 5703 = m). Same form as core/vlm_to_diggs.py CRS_COMPOUND_4326_NAVD88FT.
+  function compoundCrs(depthUnit) {
+    var vert = depthUnit === 'm' ? '5703' : '6360';
+    return 'https://www.opengis.net/def/crs-compound?1=' + EPSG + '4326%262=' + EPSG + vert;
+  }
+
+  var DENSITY_UNITS = {
+    'lbm/ft3': 'lbm/ft3 (pcf)',
+    'lbf/ft3': 'lbf/ft3 (pcf, unit weight)',
+    'kg/m3': 'kg/m3',
+    'Mg/m3': 'Mg/m3',
+    'g/cm3': 'g/cm3'
+  };
+
+  // ASTM D6913 / common sieve designations -> opening (mm)
+  var SIEVE_SIZES = {
+    '6 in': 150, '4 in': 100, '3 in': 75, '2 in': 50, '1-1/2 in': 37.5, '1 1/2 in': 37.5,
+    '1 in': 25, '3/4 in': 19, '1/2 in': 12.5, '3/8 in': 9.5, '1/4 in': 6.3,
+    'no. 4': 4.75, 'no. 8': 2.36, 'no. 10': 2.0, 'no. 16': 1.18, 'no. 20': 0.85,
+    'no. 30': 0.6, 'no. 40': 0.425, 'no. 50': 0.3, 'no. 60': 0.25, 'no. 80': 0.18,
+    'no. 100': 0.15, 'no. 140': 0.106, 'no. 200': 0.075
+  };
+
+  function sieveKey(label) {
+    var s = String(label || '').trim().toLowerCase()
+      .replace(/["”]/g, ' in').replace(/\binch(es)?\b/g, 'in')
+      .replace(/^#\s*/, 'no. ').replace(/^no\.?\s*/, 'no. ')
+      .replace(/\s+/g, ' ').trim();
+    return s;
+  }
+
+  function sieveSize(label) {
+    var k = sieveKey(label);
+    return Object.prototype.hasOwnProperty.call(SIEVE_SIZES, k) ? SIEVE_SIZES[k] : null;
+  }
+
+  // USCS symbols accepted in a lab-supplied classification (ASTM D2487 group
+  // symbols, grp-astmD2487.xml).
+  var USCS_SYMBOLS = ['CH', 'CL', 'CL-ML', 'GC', 'GC-GM', 'GM', 'GP', 'GP-GC', 'GP-GM', 'GW',
+    'GW-GC', 'GW-GM', 'MH', 'ML', 'OH', 'OL', 'PT', 'SC', 'SC-SM', 'SM', 'SP', 'SP-SC',
+    'SP-SM', 'SW', 'SW-SC', 'SW-SM'];
+
+  // ---------------------------------------------------------------------
+  // Test definitions: procedure element, display name, ASTM methods
+  // ---------------------------------------------------------------------
+  var SPECS = {
+    D2216: 'Laboratory Determination of Water (Moisture) Content of Soil and Rock by Mass',
+    D4318: 'Liquid Limit, Plastic Limit, and Plasticity Index of Soils',
+    D1140: 'Determining the Amount of Material Finer than 75-um (No. 200) Sieve in Soils by Washing',
+    D6913: 'Particle-Size Distribution (Gradation) of Soils Using Sieve Analysis',
+    D7928: 'Particle-Size Distribution (Gradation) of Fine-Grained Soils Using the Sedimentation (Hydrometer) Analysis',
+    D422: 'Particle-Size Analysis of Soils (withdrawn 2016)',
+    D2487: 'Classification of Soils for Engineering Purposes (Unified Soil Classification System)',
+    D854: 'Specific Gravity of Soil Solids by the Water Pycnometer',
+    D7263: 'Laboratory Determination of Density and Unit Weight of Soil Specimens',
+    D2974: 'Determining the Water (Moisture) Content, Ash Content, and Organic Material of Peat and Other Organic Soils',
+    D698: 'Laboratory Compaction Characteristics of Soil Using Standard Effort',
+    D1557: 'Laboratory Compaction Characteristics of Soil Using Modified Effort',
+    G51: 'Measuring pH of Soil for Use in Corrosion Testing',
+    G187: 'Measurement of Soil Resistivity Using the Two-Electrode Soil Box Method',
+    C1580: 'Water-Soluble Sulfate in Soil',
+    D4327: 'Anions in Water by Suppressed Ion Chromatography'
+  };
+
+  var KINDS = {
+    water_content: { name: 'Water Content', proc: 'WaterContentTest' },
+    atterberg_limits: { name: 'Atterberg Limits', proc: 'AtterbergLimitsTest' },
+    wash_200: { name: 'Wash No. 200', proc: 'ParticleSizeTest' },
+    gradation: { name: 'Gradation', proc: 'ParticleSizeTest' },
+    specific_gravity: { name: 'Specific Gravity', proc: 'SpecificGravityTest' },
+    unit_weight: { name: 'Unit Weight', proc: 'LabDensityTest' },
+    organic_content: { name: 'Organic Content', proc: 'LossOnIgnitionTest' },
+    compaction: { name: 'Proctor', proc: 'LabCompactionTest' },
+    ph: { name: 'pH', proc: 'LabChemicalTest' },
+    resistivity: { name: 'Resistivity', proc: 'LabResistivityTest' },
+    sulfate: { name: 'Water-Soluble Sulfate', proc: 'LabChemicalTest' },
+    chloride: { name: 'Water-Soluble Chloride', proc: 'LabChemicalTest' }
+  };
+  var KIND_ORDER = Object.keys(KINDS);
+
+  // ---------------------------------------------------------------------
+  // CSV templates
+  // ---------------------------------------------------------------------
+  // Template definitions live in templates.json, shared with the workbook
+  // builder (core/lab_workbook.py). The page build inlines the JSON here;
+  // node loads the file.
+  var TEMPLATE_DATA = {"key_columns":[{"name":"boring_id","required":true,"doc":"Boring / test pit ID, exactly as on the logs","text":true,"width":12,"lookup":"borings"},{"name":"sample_id","required":true,"doc":"Sample ID within the boring (e.g. S-3, ST-2, B-1)","text":true,"width":11},{"name":"top_depth","required":true,"doc":"Top of sample, below ground surface","min":0},{"name":"bottom_depth","required":false,"doc":"Bottom of sample; blank for a point sample","min":0},{"name":"sample_type","required":false,"doc":"e.g. split spoon, Shelby tube, bulk","text":true,"width":16,"choices":["split spoon","Shelby tube","bulk","grab","piston","ring-lined barrel","rock core","block"],"strict":false}],"templates":[{"id":"borings","title":"Borings","sheet":"Borings","astm":"","optional":true,"keyed":false,"notes":"Gives each boring a map location. Without latitude, longitude and elevation the file still passes the schema and codelist checks, but the business-rule check reports one geometry error per boring.","columns":[{"name":"boring_id","required":true,"doc":"Boring ID used in the results files","text":true,"width":12},{"name":"latitude","required":false,"doc":"Decimal degrees, WGS84","min":-90,"max":90},{"name":"longitude","required":false,"doc":"Decimal degrees, WGS84 (negative for west)","min":-180,"max":180},{"name":"ground_elevation","required":false,"doc":"Ground surface elevation, NAVD88, in the depth unit"},{"name":"total_depth","required":false,"doc":"Total depth of the boring","min":0},{"name":"date_drilled","required":false,"doc":"YYYY-MM-DD","text":true,"width":13}],"examples":[["B-1","35.780200","-78.640100","310.5","30","2026-06-01"],["B-2","35.780700","-78.639600","308.2","25","2026-06-02"]]},{"id":"samples","title":"Samples","sheet":"Samples","astm":"","optional":true,"keyed":true,"notes":"Lists samples received, including ones with no tests. Samples in the results files are added automatically.","columns":[],"examples":[["B-1","S-1","2.5","4","split spoon"],["B-1","ST-3","10","12","Shelby tube"]]},{"id":"water_content","title":"Water content","sheet":"Water Content","astm":"ASTM D2216","optional":false,"keyed":true,"notes":"","columns":[{"name":"water_content_pct","required":true,"doc":"Water content, %","min":0},{"name":"drying_temperature_c","required":false,"doc":"Oven temperature, degC"}],"examples":[["B-1","S-1","2.5","4","split spoon","12.4","110"],["B-1","S-2","5","6.5","split spoon","18.9",""]]},{"id":"atterberg_limits","title":"Atterberg limits","sheet":"Atterberg Limits","astm":"ASTM D4318","optional":false,"keyed":true,"notes":"","columns":[{"name":"liquid_limit","required":false,"doc":"LL (whole number)","min":0},{"name":"plastic_limit","required":false,"doc":"PL (whole number), or NP","text":true},{"name":"plasticity_index","required":false,"doc":"PI; blank = LL - PL","min":0},{"name":"non_plastic","required":false,"doc":"TRUE when the soil is non-plastic","choices":["TRUE","FALSE"],"strict":true},{"name":"preparation","required":false,"doc":"wet or dry","choices":["wet","dry"],"strict":true},{"name":"ll_method","required":false,"doc":"multipoint or one_point","choices":["multipoint","one_point"],"strict":true}],"examples":[["B-1","S-2","5","6.5","split spoon","32","19","","","wet","multipoint"],["B-1","S-6","27.5","29","split spoon","","NP","","TRUE","",""]]},{"id":"wash_200","title":"Wash No. 200","sheet":"Wash 200","astm":"ASTM D1140","optional":false,"keyed":true,"notes":"","columns":[{"name":"percent_passing_200","required":true,"doc":"Percent passing the No. 200 sieve","min":0,"max":100}],"examples":[["B-1","S-1","2.5","4","split spoon","34.0"]]},{"id":"gradation","title":"Gradation (sieve + hydrometer)","sheet":"Gradation","astm":"ASTM D6913 / D7928 / D422, USCS D2487","optional":false,"keyed":true,"notes":"One row per sieve or hydrometer point. Percent gravel, sand, silt, clay, D-values, Cu, Cc and the USCS classification are computed; USCS also uses the Atterberg limits of the same sample.","columns":[{"name":"standard","required":false,"doc":"Blank = D6913 (+ D7928 hydrometer); or D422","choices":["D6913","D422"],"strict":true},{"name":"method","required":true,"doc":"sieve or hydrometer","choices":["sieve","hydrometer"],"strict":true},{"name":"sieve","required":false,"doc":"Sieve designation, e.g. No. 40 or 3/4 in","text":true,"width":11,"choices":["3 in","2 in","1-1/2 in","1 in","3/4 in","1/2 in","3/8 in","No. 4","No. 10","No. 20","No. 40","No. 60","No. 100","No. 140","No. 200"],"strict":false},{"name":"particle_size_mm","required":false,"doc":"Opening or particle diameter, mm (required for hydrometer rows)","min":0},{"name":"percent_passing","required":true,"doc":"Percent passing / finer","min":0,"max":100},{"name":"uscs_symbol","required":false,"doc":"Optional reported USCS symbol (overrides the computed one)","text":true},{"name":"uscs_group_name","required":false,"doc":"Optional reported USCS group name","text":true,"width":30}],"examples":[["B-1","S-2","5","6.5","split spoon","","sieve","3/4 in","19","100","",""],["B-1","S-2","5","6.5","split spoon","","sieve","No. 4","4.75","99.1","",""],["B-1","S-2","5","6.5","split spoon","","sieve","No. 10","2","97.6","",""],["B-1","S-2","5","6.5","split spoon","","sieve","No. 40","0.425","90.8","",""],["B-1","S-2","5","6.5","split spoon","","sieve","No. 200","0.075","74.6","",""],["B-1","S-2","5","6.5","split spoon","","hydrometer","","0.02","52.4","",""],["B-1","S-2","5","6.5","split spoon","","hydrometer","","0.005","33.5","",""],["B-1","S-2","5","6.5","split spoon","","hydrometer","","0.002","24.2","",""]]},{"id":"specific_gravity","title":"Specific gravity","sheet":"Specific Gravity","astm":"ASTM D854","optional":false,"keyed":true,"notes":"","columns":[{"name":"specific_gravity","required":true,"doc":"Specific gravity of soil solids","min":1,"max":5},{"name":"water_temperature_c","required":false,"doc":"Test temperature, degC (default 20)"}],"examples":[["B-1","S-2","5","6.5","split spoon","2.68","20"]]},{"id":"unit_weight","title":"Unit weight / dry density","sheet":"Unit Weight","astm":"ASTM D7263","optional":false,"keyed":true,"notes":"","columns":[{"name":"moist_density","required":false,"doc":"Moist (bulk) density, in the density unit","min":0},{"name":"dry_density","required":false,"doc":"Dry density; blank = computed from moist density and water content","min":0},{"name":"water_content_pct","required":false,"doc":"Water content of the specimen, %; blank = the sample water content","min":0}],"examples":[["B-1","ST-3","10","12","Shelby tube","122.6","","24.1"]]},{"id":"organic_content","title":"Organic content","sheet":"Organic Content","astm":"ASTM D2974","optional":false,"keyed":true,"notes":"","columns":[{"name":"organic_content_pct","required":true,"doc":"Organic content (loss on ignition), %","min":0,"max":100},{"name":"ignition_temperature_c","required":false,"doc":"Furnace temperature, degC (default 440)"}],"examples":[["B-1","S-5","20","21.5","split spoon","7.8","440"]]},{"id":"compaction","title":"Proctor compaction","sheet":"Compaction","astm":"ASTM D698 / D1557","optional":false,"keyed":true,"notes":"One row per trial point. The maximum dry density and optimum water content are fitted (parabola through the peak) unless you report them.","columns":[{"name":"effort","required":true,"doc":"standard (D698) or modified (D1557)","choices":["standard","modified"],"strict":true},{"name":"trial","required":false,"doc":"Trial number","min":1},{"name":"water_content_pct","required":false,"doc":"Trial water content, %","min":0},{"name":"dry_density","required":false,"doc":"Trial dry density, in the density unit","min":0},{"name":"max_dry_density","required":false,"doc":"Reported maximum dry density (blank = fitted from the trials)","min":0},{"name":"optimum_water_content","required":false,"doc":"Reported optimum water content, % (blank = fitted)","min":0},{"name":"specific_gravity","required":false,"doc":"Specific gravity used for the zero-air-voids line","min":1,"max":5}],"examples":[["B-1","B-1","0","5","bulk","standard","1","11.8","109.6","","",""],["B-1","B-1","0","5","bulk","standard","2","13.9","112.8","","",""],["B-1","B-1","0","5","bulk","standard","3","15.8","114.1","","",""],["B-1","B-1","0","5","bulk","standard","4","17.9","112.3","","",""],["B-1","B-1","0","5","bulk","standard","5","20.1","108.7","","",""]]},{"id":"corrosion","title":"Corrosion suite","sheet":"Corrosion","astm":"ASTM G51 / G187 / C1580 / D4327","optional":false,"keyed":true,"notes":"Each filled cell becomes its own test. Leave a cell blank when that test was not run.","columns":[{"name":"ph","required":false,"doc":"pH","min":0,"max":14},{"name":"resistivity_ohm_cm","required":false,"doc":"Minimum resistivity, ohm-cm","min":0},{"name":"sulfate_ppm","required":false,"doc":"Water-soluble sulfate, ppm","min":0},{"name":"chloride_ppm","required":false,"doc":"Water-soluble chloride, ppm","min":0}],"examples":[["B-1","B-1","0","5","bulk","6.4","4200","45","18"]]}],"project":{"id":"project","title":"Project","sheet":"Project","fields":[{"key":"project_name","setting":"projectName","label":"Project name","doc":"Required. Written as the DIGGS project name.","example":"Example laboratory program"},{"key":"project_number","setting":"projectNumber","label":"Project number","doc":"Optional.","example":"24-1057"},{"key":"client","setting":"client","label":"Client","doc":"Optional.","example":"Example Engineering, Inc."},{"key":"laboratory","setting":"labName","label":"Laboratory","doc":"Your laboratory name.","example":"Example Soils Laboratory"},{"key":"depth_unit","setting":"depthUnit","label":"Depth and elevation unit","doc":"feet or meters. Applies to depths, elevations and total depth.","choices":["feet","meters"],"example":"feet"},{"key":"density_unit","setting":"densityUnit","label":"Density unit","doc":"Applies to every density and unit weight.","choices":["lbm/ft3","lbf/ft3","kg/m3","Mg/m3","g/cm3"],"example":"lbm/ft3"}]}};
+  if (!TEMPLATE_DATA && typeof require === 'function') {
+    TEMPLATE_DATA = require(require('path').join(__dirname, 'templates.json'));
+  }
+
+  var KEY_COLS = TEMPLATE_DATA.key_columns;
+  var PROJECT = TEMPLATE_DATA.project;
+  var TEMPLATES = TEMPLATE_DATA.templates.map(function (t) {
+    var cols = t.keyed ? KEY_COLS.concat(t.columns) : t.columns;
+    return { id: t.id, title: t.title, sheet: t.sheet, astm: t.astm, optional: t.optional,
+             keyed: t.keyed, columns: cols, examples: t.examples, notes: t.notes || '' };
+  });
+  // project.csv / the Project sheet: key/value rows, read by projectSettings()
+  TEMPLATES.push({ id: 'project', title: 'Project', sheet: PROJECT.sheet, astm: '', optional: true,
+    keyed: false, isProject: true,
+    columns: [{ name: 'field', required: true, doc: 'Field name, as listed below' },
+              { name: 'value', required: true, doc: 'Value' }],
+    examples: PROJECT.fields.map(function (f) { return [f.key, f.example]; }),
+    notes: 'Fields: ' + PROJECT.fields.map(function (f) { return f.key + ' (' + f.doc + ')'; }).join('; ') });
+
+  var TEMPLATE_BY_ID = {};
+  TEMPLATES.forEach(function (t) { TEMPLATE_BY_ID[t.id] = t; });
+
+  // header aliases -> canonical column name
+  var ALIASES = {
+    boring: 'boring_id', boring_no: 'boring_id', boring_number: 'boring_id', borehole: 'boring_id',
+    borehole_id: 'boring_id', hole_id: 'boring_id', loca_id: 'boring_id', location_id: 'boring_id',
+    sample: 'sample_id', sample_no: 'sample_id', sample_number: 'sample_id', samp_id: 'sample_id',
+    depth: 'top_depth', depth_top: 'top_depth', top: 'top_depth', from: 'top_depth', samp_top: 'top_depth',
+    depth_bottom: 'bottom_depth', bottom: 'bottom_depth', to: 'bottom_depth', samp_base: 'bottom_depth',
+    type: 'sample_type', samp_type: 'sample_type',
+    lat: 'latitude', lon: 'longitude', long: 'longitude', lng: 'longitude',
+    elevation: 'ground_elevation', ground_elev: 'ground_elevation', gl: 'ground_elevation',
+    depth_total: 'total_depth', date: 'date_drilled',
+    water_content: 'water_content_pct', moisture_content: 'water_content_pct', moisture_pct: 'water_content_pct',
+    w: 'water_content_pct', w_pct: 'water_content_pct', mc: 'water_content_pct',
+    ll: 'liquid_limit', pl: 'plastic_limit', pi: 'plasticity_index', np: 'non_plastic',
+    passing_200: 'percent_passing_200', p200: 'percent_passing_200', fines: 'percent_passing_200',
+    percent_fines: 'percent_passing_200', passing_200_pct: 'percent_passing_200',
+    size_mm: 'particle_size_mm', particle_size: 'particle_size_mm', diameter_mm: 'particle_size_mm',
+    passing: 'percent_passing', percent_finer: 'percent_passing', pct_passing: 'percent_passing',
+    uscs: 'uscs_symbol', group_symbol: 'uscs_symbol', group_name: 'uscs_group_name',
+    gs: 'specific_gravity', sg: 'specific_gravity',
+    moist_unit_weight: 'moist_density', wet_density: 'moist_density', bulk_density: 'moist_density',
+    total_unit_weight: 'moist_density', dry_unit_weight: 'dry_density',
+    organic_content: 'organic_content_pct', loi: 'organic_content_pct', loss_on_ignition: 'organic_content_pct',
+    trial_no: 'trial', dry_density_lbm_ft3: 'dry_density',
+    mdd: 'max_dry_density', maximum_dry_density: 'max_dry_density',
+    omc: 'optimum_water_content', optimum_moisture_content: 'optimum_water_content',
+    resistivity: 'resistivity_ohm_cm', sulfate: 'sulfate_ppm', sulfate_content: 'sulfate_ppm',
+    chloride: 'chloride_ppm', chloride_content: 'chloride_ppm', soil_ph: 'ph'
+  };
+
+  function normHeader(h) {
+    var s = String(h || '').replace(/^\uFEFF/, '').trim().toLowerCase()
+      .replace(/%/g, 'pct').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    if (ALIASES[s]) return ALIASES[s];
+    // tolerate unit suffixes: top_depth_ft, ground_elevation_m, dry_density_pcf ...
+    var stripped = s.replace(/_(ft|m|feet|meters|pcf|kn_m3|lbm_ft3|mg_m3|kg_m3|g_cm3)$/, '');
+    if (stripped !== s) return ALIASES[stripped] || stripped;
+    return s;
+  }
+
+  // ---------------------------------------------------------------------
+  // CSV
+  // ---------------------------------------------------------------------
+  function parseCSV(text) {
+    text = String(text || '').replace(/^\uFEFF/, '');
+    // Excel in some locales saves ';'-separated files
+    var firstLine = text.split(/\r?\n/, 1)[0] || '';
+    var delim = (firstLine.split(';').length > firstLine.split(',').length &&
+                 firstLine.indexOf('\t') < 0) ? ';'
+      : (firstLine.split('\t').length > firstLine.split(',').length ? '\t' : ',');
+    var rows = [], row = [], field = '', i = 0, inQuotes = false, n = text.length;
+    while (i < n) {
+      var c = text[i];
+      if (inQuotes) {
+        if (c === '"') {
+          if (text[i + 1] === '"') { field += '"'; i += 2; continue; }
+          inQuotes = false; i++; continue;
+        }
+        field += c; i++; continue;
+      }
+      if (c === '"' && field === '') { inQuotes = true; i++; continue; }
+      if (c === delim) { row.push(field); field = ''; i++; continue; }
+      if (c === '\r') { i++; continue; }
+      if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; i++; continue; }
+      field += c; i++;
+    }
+    if (field !== '' || row.length) { row.push(field); rows.push(row); }
+    return rows.filter(function (r) { return r.some(function (v) { return String(v).trim() !== ''; }); });
+  }
+
+  function csvCell(v) {
+    var s = v == null ? '' : String(v);
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+
+  function toCSV(rows) {
+    return rows.map(function (r) { return r.map(csvCell).join(','); }).join('\r\n') + '\r\n';
+  }
+
+  function templateCSV(id, withExamples) {
+    var t = TEMPLATE_BY_ID[id];
+    var rows = [t.columns.map(function (c) { return c.name; })];
+    if (withExamples) rows = rows.concat(t.examples);
+    return toCSV(rows);
+  }
+
+  function detectTemplate(fileName, headers) {
+    var base = String(fileName || '').toLowerCase().replace(/^.*[\\/]/, '').replace(/\.[a-z]+$/, '')
+      .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    var cols = headers.map(normHeader);
+    var has = function (c) { return cols.indexOf(c) >= 0; };
+    var matches = TEMPLATES.filter(function (t) {
+      return t.columns.every(function (c) { return !c.required || has(c.name); });
+    });
+    for (var i = 0; i < matches.length; i++) {
+      if (base === matches[i].id) return matches[i].id;
+    }
+    for (var j = 0; j < matches.length; j++) {
+      if (base.indexOf(matches[j].id) >= 0) return matches[j].id;
+    }
+    // Score by distinctive (non-key) columns present
+    var best = null, bestScore = 0;
+    matches.forEach(function (t) {
+      var score = t.columns.filter(function (c) {
+        return KEY_COLS.every(function (k) { return k.name !== c.name; }) && has(c.name);
+      }).length;
+      if (score > bestScore) { best = t.id; bestScore = score; }
+    });
+    if (best) return best;
+    if (matches.some(function (t) { return t.id === 'samples'; })) return 'samples';
+    if (matches.some(function (t) { return t.id === 'borings'; })) return 'borings';
+    return null;
+  }
+
+  // ---------------------------------------------------------------------
+  // Numbers / formatting
+  // ---------------------------------------------------------------------
+  function num(v) {
+    if (v == null) return null;
+    var s = String(v).trim().replace(/,/g, '');
+    if (s === '') return null;
+    if (!/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(s)) return NaN;
+    return parseFloat(s);
+  }
+
+  function fmt(v) {
+    if (typeof v !== 'number') return String(v);
+    if (Object.is(v, -0)) v = 0;
+    return String(Number(v.toPrecision(12)));
+  }
+
+  function round(v, d) {
+    var f = Math.pow(10, d);
+    return Math.round((v + (v >= 0 ? 1 : -1) * 1e-9) * f) / f;
+  }
+
+  function truthy(v) {
+    return /^(true|yes|y|1|x|np)$/i.test(String(v || '').trim());
+  }
+
+  function normDate(raw) {
+    var s = String(raw || '').trim();
+    if (!s) return null;
+    if (/^\d{5}(\.\d+)?$/.test(s)) {
+      // Excel date serial (1900 date system): days since 1899-12-30
+      var dt = new Date(Date.UTC(1899, 11, 30) + Math.floor(parseFloat(s)) * 86400000);
+      if (dt.getUTCFullYear() < 1950 || dt.getUTCFullYear() > 2150) return null;
+      return dt.toISOString().slice(0, 10);
+    }
+    var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    var y, mo, d;
+    if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; }
+    else if ((m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2}|\d{4})$/))) {
+      mo = +m[1]; d = +m[2]; y = +m[3]; if (y < 100) y += y < 70 ? 2000 : 1900;
+    } else return null;
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    return y + '-' + (mo < 10 ? '0' : '') + mo + '-' + (d < 10 ? '0' : '') + d;
+  }
+
+  function safeId(raw) {
+    var s = String(raw).replace(/[^A-Za-z0-9_]/g, '_');
+    if (!s || !/^[A-Za-z_]/.test(s)) s = '_' + s;
+    return s;
+  }
+
+  // ---------------------------------------------------------------------
+  // Derived values (ported from lab.py)
+  // ---------------------------------------------------------------------
+
+  /** Particle size at `percent` passing, log-linear between bracketing points.
+   *  curve: [{size, pass}] sorted by size descending. */
+  function dValue(curve, percent) {
+    for (var i = 0; i + 1 < curve.length; i++) {
+      var s1 = curve[i].size, p1 = curve[i].pass, s2 = curve[i + 1].size, p2 = curve[i + 1].pass;
+      if (p1 >= percent && percent >= p2 && p1 !== p2) {
+        var logSize = Math.log10(s2) + (percent - p2) * (Math.log10(s1) - Math.log10(s2)) / (p1 - p2);
+        return Math.pow(10, logSize);
+      }
+    }
+    return null;
+  }
+
+  /** Percent passing at `size` mm: exact point (within 1 %), else log-linear
+   *  between bracketing points, else 100 above a 100 % point. */
+  function passingAt(curve, size) {
+    for (var i = 0; i < curve.length; i++) {
+      if (Math.abs(curve[i].size - size) <= size * 0.01) return curve[i].pass;
+    }
+    for (var j = 0; j + 1 < curve.length; j++) {
+      var a = curve[j], b = curve[j + 1];
+      if (a.size > size && size > b.size) {
+        return b.pass + (Math.log10(size) - Math.log10(b.size)) *
+          (a.pass - b.pass) / (Math.log10(a.size) - Math.log10(b.size));
+      }
+    }
+    if (curve.length && size > curve[0].size && curve[0].pass >= 100) return 100;
+    return null;
+  }
+
+  function aLine(ll) { return 0.73 * (ll - 20); }
+
+  /** Plasticity-chart symbol for the fines (ASTM D2487, inorganic soils). */
+  function finesSymbol(ll, pi) {
+    if (ll == null) return 'ML';  // non-plastic with no liquid limit
+    if (ll < 50) {
+      if (pi > 7 && pi >= aLine(ll)) return 'CL';
+      if (pi >= 4 && pi <= 7 && pi >= aLine(ll)) return 'CL-ML';
+      return 'ML';
+    }
+    return pi >= aLine(ll) ? 'CH' : 'MH';
+  }
+
+  var FINE_NAMES = { 'CL': 'lean clay', 'CL-ML': 'silty clay', 'ML': 'silt',
+    'CH': 'fat clay', 'MH': 'elastic silt' };
+
+  function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+  /** [symbol, group name] per ASTM D2487 for inorganic soils, or null with a
+   *  reason when the tests needed to classify were not run. */
+  function uscs(summary, plasticity) {
+    var gravel = summary.gravel, sand = summary.sand, fines = summary.fines;
+    if (gravel == null || sand == null || fines == null) {
+      return { reason: 'the gradation does not cover the No. 4 and No. 200 sieves' };
+    }
+    var fs = plasticity ? finesSymbol(plasticity.ll, plasticity.pi) : null;
+
+    if (fines >= 50) {
+      if (!fs) return { reason: 'fine-grained soil needs Atterberg limits on the same sample' };
+      var base = FINE_NAMES[fs], coarse = 100 - fines, name;
+      if (coarse < 15) name = base;
+      else if (coarse < 30) name = base + ' with ' + (sand >= gravel ? 'sand' : 'gravel');
+      else if (sand >= gravel) name = 'sandy ' + base + (gravel >= 15 ? ' with gravel' : '');
+      else name = 'gravelly ' + base + (sand >= 15 ? ' with sand' : '');
+      return { symbol: fs, name: cap(name) };
+    }
+
+    var isG = gravel > sand;
+    var letter = isG ? 'G' : 'S', soil = isG ? 'gravel' : 'sand';
+    var other = isG ? sand : gravel, otherWord = isG ? 'sand' : 'gravel';
+    var graded = null;
+    if (fines <= 12) {
+      if (summary.cu == null || summary.cc == null) {
+        return { reason: 'coarse soil with 12 % fines or less needs D10, D30 and D60 (Cu, Cc)' };
+      }
+      var well = summary.cu >= (isG ? 4 : 6) && summary.cc >= 1 && summary.cc <= 3;
+      graded = { sym: letter + (well ? 'W' : 'P'), word: well ? 'Well-graded' : 'Poorly graded' };
+    }
+    if (fines < 5) {
+      return { symbol: graded.sym, name: graded.word + ' ' + soil + (other >= 15 ? ' with ' + otherWord : '') };
+    }
+    if (!fs) return { reason: 'coarse soil with 5 % fines or more needs Atterberg limits on the same sample' };
+    var clayey = fs === 'CL' || fs === 'CH' || fs === 'CL-ML';
+    if (fines <= 12) {
+      var sym2 = letter + (clayey ? 'C' : 'M');
+      return { symbol: graded.sym + '-' + sym2,
+               name: graded.word + ' ' + soil + ' with ' + (clayey ? 'clay' : 'silt') +
+                     (other >= 15 ? ' and ' + otherWord : '') };
+    }
+    var suffix = other >= 15 ? ' with ' + otherWord : '';
+    if (fs === 'CL-ML') return { symbol: letter + 'C-' + letter + 'M', name: 'Silty, clayey ' + soil + suffix };
+    if (clayey) return { symbol: letter + 'C', name: 'Clayey ' + soil + suffix };
+    return { symbol: letter + 'M', name: 'Silty ' + soil + suffix };
+  }
+
+  function gradationSummary(curve, hasHydrometer) {
+    var out = {};
+    var fines = passingAt(curve, 0.075), p4 = passingAt(curve, 4.75);
+    if (fines != null) out.fines = fines;
+    if (fines != null && p4 != null) {
+      out.gravel = round(100 - p4, 1);
+      out.sand = round(p4 - fines, 1);
+    }
+    if (hasHydrometer && fines != null) {
+      var clay = passingAt(curve, 0.002);
+      if (clay != null && clay <= fines) {
+        out.clay = round(clay, 1);
+        out.silt = round(fines - clay, 1);
+      }
+    }
+    [10, 30, 50, 60].forEach(function (p) {
+      var d = dValue(curve, p);
+      if (d != null) out['d' + p] = round(d, 4);
+    });
+    if (out.d10 != null && out.d30 != null && out.d60 != null && out.d10 > 0) {
+      out.cu = round(out.d60 / out.d10, 2);
+      out.cc = round(out.d30 * out.d30 / (out.d10 * out.d60), 2);
+    }
+    return out;
+  }
+
+  /** {omc, mdd}: vertex of the parabola through the highest trial and its two
+   *  neighbours (lab.py compaction_summary). null when it cannot be fitted. */
+  function compactionSummary(trials) {
+    if (trials.length < 3) return null;
+    var peak = 0;
+    trials.forEach(function (t, i) { if (t.dd > trials[peak].dd) peak = i; });
+    var lo = Math.min(Math.max(peak - 1, 0), trials.length - 3);
+    var x1 = trials[lo].w, y1 = trials[lo].dd, x2 = trials[lo + 1].w, y2 = trials[lo + 1].dd,
+        x3 = trials[lo + 2].w, y3 = trials[lo + 2].dd;
+    var denom = (x1 - x2) * (x1 - x3) * (x2 - x3);
+    if (!denom) return null;
+    var a = (x3 * (y2 - y1) + x2 * (y1 - y3) + x1 * (y3 - y2)) / denom;
+    var b = (x3 * x3 * (y1 - y2) + x2 * x2 * (y3 - y1) + x1 * x1 * (y2 - y3)) / denom;
+    var c = (x2 * x3 * (x2 - x3) * y1 + x3 * x1 * (x3 - x1) * y2 + x1 * x2 * (x1 - x2) * y3) / denom;
+    if (!(a < 0)) return null;
+    var omc = -b / (2 * a);
+    if (omc < trials[0].w || omc > trials[trials.length - 1].w) return null;
+    return { omc: round(omc, 1), mdd: round(c - b * b / (4 * a), 1) };
+  }
+
+  // ---------------------------------------------------------------------
+  // Dataset
+  // ---------------------------------------------------------------------
+
+  /** Rows of a loaded file: CSV text, or rows already read from a workbook
+   *  sheet. Cells become trimmed strings; blank rows are dropped. */
+  function fileRows(f) {
+    if (!f.rows) return parseCSV(f.text);
+    return f.rows.map(function (r) {
+      var out = [];
+      for (var i = 0; i < r.length; i++) out.push(r[i] == null ? '' : String(r[i]));
+      return out;
+    }).filter(function (r) { return r.some(function (v) { return v.trim() !== ''; }); });
+  }
+
+  /** Project settings from project.csv / the Project sheet (field,value rows).
+   *  Returns {settingName: value} for the fields that have a value. */
+  function projectSettings(rows) {
+    var out = {};
+    if (!rows || rows.length < 2) return out;
+    var headers = rows[0].map(normHeader);
+    var fi = headers.indexOf('field'), vi = headers.indexOf('value');
+    if (fi < 0 || vi < 0) return out;
+    var byKey = {};
+    PROJECT.fields.forEach(function (f) { byKey[f.key] = f; byKey[normHeader(f.label)] = f; });
+    byKey.lab = byKey.lab_name = byKey.laboratory;
+    rows.slice(1).forEach(function (r) {
+      var f = byKey[normHeader(r[fi])];
+      var v = String(r[vi] == null ? '' : r[vi]).trim();
+      if (!f || !v) return;
+      if (f.key === 'depth_unit') {
+        if (/^(m|meters?|metres?)$/i.test(v)) v = 'm';
+        else if (/^(ft|feet|foot)$/i.test(v)) v = 'ft';
+        else return;
+      }
+      if (f.key === 'density_unit') {
+        var u = v.replace(/\s*\(.*\)$/, '').replace(/\^/g, '').trim();
+        if (/^pcf$/i.test(u)) u = 'lbm/ft3';
+        if (!DENSITY_UNITS[u]) return;
+        v = u;
+      }
+      out[f.setting] = v;
+    });
+    return out;
+  }
+
+  /**
+   * files: [{name, text | rows, template?, sheet?, detectName?}]
+   *   template overrides detection; sheet marks a workbook sheet (unrecognised
+   *   sheets are skipped with a warning instead of blocking the build)
+   * settings: {projectName, projectNumber, client, labName, depthUnit, densityUnit}
+   */
+  function buildDataset(files, settings) {
+    var ds = { borings: {}, boringOrder: [], samples: {}, sampleOrder: [], tests: [],
+               warnings: [], errors: [], files: [] };
+    var depthUnit = settings.depthUnit === 'm' ? 'm' : 'ft';
+
+    function warn(msg) { ds.warnings.push(msg); }
+    function err(msg) { ds.errors.push(msg); }
+
+    function boring(id) {
+      if (!ds.borings[id]) {
+        ds.borings[id] = { id: id };
+        ds.boringOrder.push(id);
+      }
+      return ds.borings[id];
+    }
+
+    function sample(where, r) {
+      var b = r.boring_id, s = r.sample_id;
+      var key = b + '\u0000' + s;
+      var top = num(r.top_depth), bottom = num(r.bottom_depth);
+      if (top != null && isNaN(top)) { err(where + ': top_depth "' + r.top_depth + '" is not a number'); top = null; }
+      if (bottom != null && isNaN(bottom)) { err(where + ': bottom_depth "' + r.bottom_depth + '" is not a number'); bottom = null; }
+      if (top != null && bottom != null && bottom < top) {
+        err(where + ': bottom_depth ' + bottom + ' is above top_depth ' + top); bottom = null;
+      }
+      boring(b);
+      var smp = ds.samples[key];
+      if (!smp) {
+        smp = ds.samples[key] = { key: key, boring: b, id: s, top: top, bottom: bottom,
+          type: (r.sample_type || '').trim(), tests: [] };
+        ds.sampleOrder.push(key);
+      } else {
+        if (smp.top == null) smp.top = top;
+        else if (top != null && Math.abs(top - smp.top) > 1e-6) {
+          warn(where + ': sample ' + b + ' ' + s + ' top depth ' + fmt(top) +
+               ' differs from ' + fmt(smp.top) + ' given earlier; using ' + fmt(smp.top));
+        }
+        if (smp.bottom == null) smp.bottom = bottom;
+        else if (bottom != null && Math.abs(bottom - smp.bottom) > 1e-6) {
+          warn(where + ': sample ' + b + ' ' + s + ' bottom depth ' + fmt(bottom) +
+               ' differs from ' + fmt(smp.bottom) + ' given earlier; using ' + fmt(smp.bottom));
+        }
+        if (!smp.type && r.sample_type) smp.type = r.sample_type.trim();
+      }
+      return smp;
+    }
+
+    function addTest(smp, kind, data) {
+      var t = { kind: kind, sample: smp.key, data: data };
+      smp.tests.push(t);
+      ds.tests.push(t);
+      return t;
+    }
+
+    // Parse all files into canonical row objects, grouped by template
+    var byTemplate = {};
+    files.forEach(function (f) {
+      var rows = fileRows(f);
+      if (rows.length < 2) {
+        if (!f.sheet) warn(f.name + ': ' + (rows.length ? 'no data rows' : 'file is empty'));
+        return;
+      }
+      var headers = rows[0].map(normHeader);
+      var id = f.template || detectTemplate(f.detectName || f.name, rows[0]);
+      if (!id || !TEMPLATE_BY_ID[id]) {
+        if (f.sheet) warn(f.name + ': sheet not recognised, so it was ignored. Choose a template for it if it holds results.');
+        else err(f.name + ': could not tell which template this file follows. Check the header row against the templates.');
+        return;
+      }
+      var t = TEMPLATE_BY_ID[id];
+      if (t.isProject) { ds.files.push({ name: f.name, template: id, rows: rows.length - 1 }); return; }
+      var missing = t.columns.filter(function (c) { return c.required && headers.indexOf(c.name) < 0; });
+      if (missing.length) {
+        err(f.name + ': missing required column(s) ' + missing.map(function (c) { return c.name; }).join(', ') +
+            ' for the ' + t.title + ' template');
+        return;
+      }
+      var known = {};
+      t.columns.forEach(function (c) { known[c.name] = true; });
+      var extra = headers.filter(function (h) { return h && !known[h]; });
+      if (extra.length) warn(f.name + ': ignored column(s) ' + extra.join(', '));
+      var objs = [];
+      for (var i = 1; i < rows.length; i++) {
+        var o = { _where: f.name + ' row ' + (i + 1) };
+        headers.forEach(function (h, j) {
+          if (known[h] && o[h] === undefined) o[h] = (rows[i][j] == null ? '' : String(rows[i][j])).trim();
+        });
+        objs.push(o);
+      }
+      ds.files.push({ name: f.name, template: id, rows: objs.length });
+      var bucket = byTemplate[id] = byTemplate[id] || [];
+      objs.forEach(function (o) { bucket.push(o); });
+    });
+
+    function rowsOf(id) { return byTemplate[id] || []; }
+
+    function keyed(r) {
+      if (!r.boring_id) { err(r._where + ': boring_id is blank'); return false; }
+      if (!r.sample_id) { err(r._where + ': sample_id is blank'); return false; }
+      return true;
+    }
+
+    function numField(r, col, opts) {
+      var v = num(r[col]);
+      if (v != null && isNaN(v)) { err(r._where + ': ' + col + ' "' + r[col] + '" is not a number'); return null; }
+      if (v != null && opts && opts.min != null && v < opts.min) { err(r._where + ': ' + col + ' ' + v + ' is below ' + opts.min); return null; }
+      if (v != null && opts && opts.max != null && v > opts.max) { err(r._where + ': ' + col + ' ' + v + ' is above ' + opts.max); return null; }
+      return v;
+    }
+
+    // borings
+    rowsOf('borings').forEach(function (r) {
+      if (!r.boring_id) { err(r._where + ': boring_id is blank'); return; }
+      var b = boring(r.boring_id);
+      if (b.fromFile) warn(r._where + ': boring ' + r.boring_id + ' listed twice; using the first row');
+      if (b.fromFile) return;
+      b.fromFile = true;
+      b.lat = numField(r, 'latitude', { min: -90, max: 90 });
+      b.lon = numField(r, 'longitude', { min: -180, max: 180 });
+      b.elev = numField(r, 'ground_elevation');
+      b.total = numField(r, 'total_depth', { min: 0 });
+      if (r.date_drilled) {
+        b.date = normDate(r.date_drilled);
+        if (!b.date) warn(r._where + ': date_drilled "' + r.date_drilled + '" not understood (use YYYY-MM-DD); left out');
+      }
+      if ((b.lat == null) !== (b.lon == null)) {
+        warn(r._where + ': boring ' + b.id + ' needs both latitude and longitude; location left out');
+        b.lat = b.lon = null;
+      }
+    });
+
+    // Locations typed into the page override / complete borings.csv
+    var typed = settings.borings || {};
+    Object.keys(typed).forEach(function (id) {
+      var o = typed[id] || {};
+      if (!ds.borings[id]) return;  // only borings that appear in the files
+      var b = ds.borings[id];
+      var where = 'Boring ' + id + ' (entered on the page)';
+      ['lat', 'lon', 'elev', 'total'].forEach(function (k) {
+        if (o[k] === undefined || o[k] === null || String(o[k]).trim() === '') return;
+        var v = num(o[k]);
+        if (isNaN(v)) { err(where + ': "' + o[k] + '" is not a number'); return; }
+        b[k] = v;
+      });
+      if (o.date) {
+        var dt = normDate(o.date);
+        if (dt) b.date = dt; else warn(where + ': date "' + o.date + '" not understood (use YYYY-MM-DD)');
+      }
+    });
+
+    rowsOf('samples').forEach(function (r) { if (keyed(r)) sample(r._where, r); });
+
+    var single = {
+      water_content: function (r) {
+        var w = numField(r, 'water_content_pct', { min: 0 });
+        if (w == null) return null;
+        return { w: w, dryingTemp: numField(r, 'drying_temperature_c') };
+      },
+      atterberg_limits: function (r) {
+        var np = truthy(r.non_plastic) || /^n\.?p\.?$/i.test(r.plastic_limit || '') ||
+                 /^n\.?p\.?$/i.test(r.plasticity_index || '');
+        var pl = /^n\.?p\.?$/i.test(r.plastic_limit || '') ? null : numField(r, 'plastic_limit', { min: 0 });
+        var pi = /^n\.?p\.?$/i.test(r.plasticity_index || '') ? null : numField(r, 'plasticity_index', { min: 0 });
+        var ll = /^n\.?[pv]\.?$/i.test(r.liquid_limit || '') ? null : numField(r, 'liquid_limit', { min: 0 });
+        if (np) return { ll: ll, nonPlastic: true, prep: r.preparation, llMethod: r.ll_method };
+        if (ll == null && pl == null) {
+          err(r._where + ': Atterberg row needs liquid_limit and plastic_limit, or non_plastic = TRUE');
+          return null;
+        }
+        if (ll == null || pl == null) {
+          err(r._where + ': Atterberg row needs both liquid_limit and plastic_limit');
+          return null;
+        }
+        var rll = Math.round(ll), rpl = Math.round(pl);
+        if (rll !== ll || rpl !== pl) warn(r._where + ': Atterberg limits are reported as whole numbers; rounded');
+        if (pi == null) pi = rll - rpl;
+        else if (Math.round(pi) !== rll - rpl) {
+          warn(r._where + ': plasticity_index ' + pi + ' is not LL - PL (' + (rll - rpl) + '); kept as reported');
+        }
+        return { ll: rll, pl: rpl, pi: Math.round(pi), nonPlastic: false,
+                 prep: r.preparation, llMethod: r.ll_method };
+      },
+      wash_200: function (r) {
+        var p = numField(r, 'percent_passing_200', { min: 0, max: 100 });
+        return p == null ? null : { p200: p };
+      },
+      specific_gravity: function (r) {
+        var gs = numField(r, 'specific_gravity', { min: 1, max: 5 });
+        if (gs == null) return null;
+        var t = numField(r, 'water_temperature_c');
+        return { gs: gs, waterTemp: t == null ? 20 : t };
+      },
+      unit_weight: function (r) {
+        var moist = numField(r, 'moist_density', { min: 0 });
+        var dry = numField(r, 'dry_density', { min: 0 });
+        var w = numField(r, 'water_content_pct', { min: 0 });
+        if (moist == null && dry == null) return null;
+        return { moist: moist, dry: dry, w: w };
+      },
+      organic_content: function (r) {
+        var loi = numField(r, 'organic_content_pct', { min: 0, max: 100 });
+        if (loi == null) return null;
+        var t = numField(r, 'ignition_temperature_c');
+        return { loi: loi, ignitionTemp: t == null ? 440 : t };
+      }
+    };
+
+    Object.keys(single).forEach(function (kind) {
+      rowsOf(kind).forEach(function (r) {
+        if (!keyed(r)) return;
+        var errorsBefore = ds.errors.length;
+        var data = single[kind](r);
+        var smp = sample(r._where, r);
+        if (!data) {
+          if (ds.errors.length === errorsBefore) {
+            warn(r._where + ': no ' + KINDS[kind].name.toLowerCase() + ' value; row skipped');
+          }
+          return;
+        }
+        data.where = r._where;
+        addTest(smp, kind, data);
+      });
+    });
+
+    // corrosion: one test per filled cell
+    var CORR = [['ph', 'ph', 0, 14], ['resistivity', 'resistivity_ohm_cm', 0, null],
+                ['sulfate', 'sulfate_ppm', 0, null], ['chloride', 'chloride_ppm', 0, null]];
+    rowsOf('corrosion').forEach(function (r) {
+      if (!keyed(r)) return;
+      var smp = sample(r._where, r);
+      var any = false;
+      CORR.forEach(function (c) {
+        var v = numField(r, c[1], { min: c[2], max: c[3] });
+        if (v == null) return;
+        any = true;
+        addTest(smp, c[0], { value: v, where: r._where });
+      });
+      if (!any) warn(r._where + ': no corrosion values; row skipped');
+    });
+
+    // gradation (long): group by sample + standard
+    var groups = {}, groupOrder = [];
+    rowsOf('gradation').forEach(function (r) {
+      if (!keyed(r)) return;
+      var smp = sample(r._where, r);
+      var std = String(r.standard || '').toUpperCase().replace(/^ASTM\s*/, '').replace(/\s+/g, '');
+      if (std && ['D422', 'D6913', 'D7928', 'D6913/D7928'].indexOf(std) < 0) {
+        warn(r._where + ': standard "' + r.standard + '" not recognised; using D6913');
+        std = '';
+      }
+      var legacy = std === 'D422';
+      var gk = smp.key + '\u0000' + (legacy ? 'D422' : '');
+      var g = groups[gk];
+      if (!g) {
+        g = groups[gk] = { smp: smp, legacy: legacy, points: [], where: r._where };
+        groupOrder.push(gk);
+      }
+      if (r.uscs_symbol && !g.uscsSymbol) g.uscsSymbol = r.uscs_symbol.toUpperCase().replace(/\s+/g, '');
+      if (r.uscs_group_name && !g.uscsName) g.uscsName = r.uscs_group_name;
+      var method = String(r.method || '').toLowerCase().trim();
+      if (method.indexOf('hyd') === 0 || method === 'sedimentation') method = 'hydrometer';
+      else if (method.indexOf('siev') === 0 || method === '') method = 'sieve';
+      else { err(r._where + ': method "' + r.method + '" must be sieve or hydrometer'); return; }
+      var pass = numField(r, 'percent_passing', { min: 0, max: 100 });
+      if (pass == null) {
+        if (r.percent_passing === '') warn(r._where + ': percent_passing is blank; row skipped');
+        return;
+      }
+      var size = numField(r, 'particle_size_mm', { min: 0 });
+      if (size === 0) { err(r._where + ': particle_size_mm must be greater than 0'); return; }
+      if (size == null && method === 'sieve') size = sieveSize(r.sieve);
+      if (size == null) {
+        err(r._where + ': give particle_size_mm' + (method === 'sieve' ? ' (sieve "' + r.sieve + '" is not a standard designation)' : ''));
+        return;
+      }
+      g.points.push({ method: method, sieve: method === 'sieve' ? r.sieve : '', size: size, pass: pass, where: r._where });
+    });
+    groupOrder.forEach(function (gk) {
+      var g = groups[gk];
+      if (!g.points.length) return;
+      var sieves = g.points.filter(function (p) { return p.method === 'sieve'; });
+      var hydro = g.points.filter(function (p) { return p.method === 'hydrometer'; });
+      var bySize = function (a, b) { return b.size - a.size; };
+      sieves.sort(bySize); hydro.sort(bySize);
+      var curve = sieves.concat(hydro).sort(bySize);
+      for (var i = 0; i + 1 < curve.length; i++) {
+        if (curve[i + 1].pass > curve[i].pass + 1e-9) {
+          warn(g.where + ': percent passing rises from ' + fmt(curve[i].pass) + ' at ' + fmt(curve[i].size) +
+               ' mm to ' + fmt(curve[i + 1].pass) + ' at ' + fmt(curve[i + 1].size) + ' mm for ' +
+               g.smp.boring + ' ' + g.smp.id + '; check the data');
+          break;
+        }
+      }
+      addTest(g.smp, 'gradation', { legacy: g.legacy, sieves: sieves, hydro: hydro, curve: curve,
+        uscsSymbol: g.uscsSymbol, uscsName: g.uscsName, where: g.where });
+    });
+
+    // compaction (long): group by sample + effort
+    var cgroups = {}, corder = [];
+    rowsOf('compaction').forEach(function (r) {
+      if (!keyed(r)) return;
+      var smp = sample(r._where, r);
+      var effort = String(r.effort || '').toLowerCase().trim();
+      if (/^(mod|d1557|astm ?d1557|t180)/.test(effort)) effort = 'modified';
+      else if (/^(std|stan|d698|astm ?d698|t99)/.test(effort)) effort = 'standard';
+      else { err(r._where + ': effort "' + r.effort + '" must be standard or modified'); return; }
+      var ck = smp.key + '\u0000' + effort;
+      var g = cgroups[ck];
+      if (!g) { g = cgroups[ck] = { smp: smp, effort: effort, trials: [], where: r._where }; corder.push(ck); }
+      var mdd = numField(r, 'max_dry_density', { min: 0 }), omc = numField(r, 'optimum_water_content', { min: 0 });
+      var gs = numField(r, 'specific_gravity', { min: 1, max: 5 });
+      if (mdd != null && g.mdd == null) g.mdd = mdd;
+      if (omc != null && g.omc == null) g.omc = omc;
+      if (gs != null && g.gs == null) g.gs = gs;
+      var w = numField(r, 'water_content_pct', { min: 0 }), dd = numField(r, 'dry_density', { min: 0 });
+      if (w != null && dd != null) {
+        g.trials.push({ n: numField(r, 'trial'), w: w, dd: dd });
+      } else if (w != null || dd != null) {
+        err(r._where + ': a trial needs both water_content_pct and dry_density');
+      }
+    });
+    corder.forEach(function (ck) {
+      var g = cgroups[ck];
+      g.trials.sort(function (a, b) { return a.w - b.w; });
+      var fit = compactionSummary(g.trials);
+      var mdd = g.mdd, omc = g.omc;
+      if (mdd == null || omc == null) {
+        if (fit) {
+          if (mdd == null) mdd = fit.mdd;
+          if (omc == null) omc = fit.omc;
+        } else if (g.trials.length) {
+          var peak = g.trials.reduce(function (a, b) { return b.dd > a.dd ? b : a; });
+          if (mdd == null) mdd = peak.dd;
+          if (omc == null) omc = peak.w;
+          warn(g.where + ': could not fit a compaction curve for ' + g.smp.boring + ' ' + g.smp.id +
+               ' (needs 3 or more trials with a peak inside them); reported the highest trial point instead');
+        }
+      }
+      if (mdd == null && omc == null && !g.trials.length) {
+        err(g.where + ': compaction for ' + g.smp.boring + ' ' + g.smp.id + ' has no trials and no reported maximum');
+        return;
+      }
+      addTest(g.smp, 'compaction', { effort: g.effort, trials: g.trials, mdd: mdd, omc: omc, gs: g.gs, where: g.where });
+    });
+
+    // samples must have a depth
+    ds.sampleOrder.forEach(function (k) {
+      var s = ds.samples[k];
+      if (s.top == null) err('Sample ' + s.boring + ' ' + s.id + ' has no top_depth in any file');
+    });
+
+    // duplicates of the same test on one sample
+    ds.sampleOrder.forEach(function (k) {
+      var s = ds.samples[k], seen = {};
+      s.tests.forEach(function (t) {
+        var tag = t.kind + (t.kind === 'compaction' ? ':' + t.data.effort : '') +
+                  (t.kind === 'gradation' ? ':' + t.data.legacy : '');
+        if (seen[tag]) warn(t.data.where + ': a second ' + KINDS[t.kind].name.toLowerCase() +
+                            ' result for ' + s.boring + ' ' + s.id + '; both are kept as separate tests');
+        seen[tag] = true;
+      });
+      s.tests.sort(function (a, b) { return KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind); });
+    });
+
+    // Derived values that need other tests on the same sample
+    ds.tests.forEach(function (t) {
+      var smp = ds.samples[t.sample];
+      var d = t.data;
+      if (t.kind === 'unit_weight') {
+        var w = d.w;
+        if (w == null) {
+          var wc = smp.tests.filter(function (x) { return x.kind === 'water_content'; })[0];
+          if (wc) d.wFromSample = wc.data.w;
+        }
+        var wUse = w != null ? w : d.wFromSample;
+        if (d.dry == null && d.moist != null) {
+          if (wUse != null) d.dryComputed = round(d.moist / (1 + wUse / 100), 1);
+          else warn(d.where + ': no water content for ' + smp.boring + ' ' + smp.id +
+                    ', so dry density was not computed');
+        }
+      }
+      if (t.kind === 'gradation') {
+        var att = smp.tests.filter(function (x) { return x.kind === 'atterberg_limits'; })[0];
+        var plast = null;
+        if (att) plast = att.data.nonPlastic ? { ll: att.data.ll, pi: 0 } : { ll: att.data.ll, pi: att.data.pi };
+        d.summary = gradationSummary(d.curve, d.hydro.length > 0);
+        if (d.summary.fines == null) {
+          warn(d.where + ': gradation for ' + smp.boring + ' ' + smp.id +
+               ' has no No. 200 (0.075 mm) point, so percent fines and USCS were not computed');
+        }
+        if (d.uscsSymbol) {
+          if (USCS_SYMBOLS.indexOf(d.uscsSymbol) < 0) {
+            warn(d.where + ': USCS symbol "' + d.uscsSymbol + '" is not an ASTM D2487 group symbol');
+          }
+          d.uscs = { symbol: d.uscsSymbol, name: d.uscsName || null, reported: true };
+        } else if (d.summary.fines != null) {
+          var u = uscs(d.summary, plast);
+          if (u.symbol) d.uscs = u;
+          else warn(d.where + ': USCS not computed for ' + smp.boring + ' ' + smp.id + ': ' + u.reason);
+        }
+      }
+    });
+
+    // borings: apply page entries for borings first seen in results files,
+    // fill total depth, check location
+    Object.keys(typed).forEach(function (id) {
+      var b = ds.borings[id], o = typed[id] || {};
+      if (!b) return;
+      ['lat', 'lon', 'elev', 'total'].forEach(function (k) {
+        var v = num(o[k]);
+        if (v != null && !isNaN(v)) b[k] = v;
+      });
+      if (o.date && normDate(o.date)) b.date = normDate(o.date);
+    });
+    var noXY = [], noZ = [];
+    ds.boringOrder.forEach(function (id) {
+      var b = ds.borings[id];
+      var maxDepth = 0;
+      ds.sampleOrder.forEach(function (k) {
+        var s = ds.samples[k];
+        if (s.boring !== id) return;
+        maxDepth = Math.max(maxDepth, s.bottom != null ? s.bottom : (s.top || 0));
+      });
+      if (b.total == null) { b.total = maxDepth; b.totalComputed = true; }
+      else if (b.total < maxDepth) {
+        warn('Boring ' + id + ': total_depth ' + fmt(b.total) + ' is shallower than its deepest sample (' +
+             fmt(maxDepth) + ')');
+      }
+      if (b.lat != null && (b.lat < -90 || b.lat > 90)) { err('Boring ' + id + ': latitude ' + b.lat + ' is out of range'); }
+      if (b.lon != null && (b.lon < -180 || b.lon > 180)) { err('Boring ' + id + ': longitude ' + b.lon + ' is out of range'); }
+      if (b.lat == null || b.lon == null) noXY.push(id);
+      else if (b.elev == null) noZ.push(id);
+    });
+    if (noXY.length) {
+      err('No latitude/longitude for boring' + (noXY.length > 1 ? 's ' : ' ') + noXY.join(', ') +
+          '. DIGGS requires a location for every boring. Enter it in the Borings table or in borings.csv.');
+    }
+    if (noZ.length) {
+      warn('No ground elevation for ' + noZ.join(', ') +
+           '. The file is valid DIGGS, but the online business-rule check reports one geometry error for each of these borings. Add the elevation to clear it.');
+    }
+    if (!ds.tests.length && !ds.errors.length) err('No test results found. Add at least one results file.');
+    ds.depthUnit = depthUnit;
+    return ds;
+  }
+
+  // ---------------------------------------------------------------------
+  // XML writer
+  // ---------------------------------------------------------------------
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      // XML 1.0 forbids most control characters
+      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '');
+  }
+
+  function E(tag, attrs, children) {
+    if (!Array.isArray(children) && children !== undefined && children !== null && typeof children !== 'object') {
+      children = String(children);
+    }
+    return { tag: tag, attrs: attrs || {}, children: children };
+  }
+
+  function serialize(node, indent, out) {
+    var pad = new Array(indent + 1).join('  ');
+    var attrs = '';
+    Object.keys(node.attrs).forEach(function (k) {
+      if (node.attrs[k] !== undefined && node.attrs[k] !== null) attrs += ' ' + k + '="' + esc(node.attrs[k]) + '"';
+    });
+    var ch = node.children;
+    if (ch === undefined || ch === null || (Array.isArray(ch) && !ch.filter(Boolean).length)) {
+      out.push(pad + '<' + node.tag + attrs + '/>');
+    } else if (typeof ch === 'string') {
+      out.push(pad + '<' + node.tag + attrs + '>' + esc(ch) + '</' + node.tag + '>');
+    } else {
+      out.push(pad + '<' + node.tag + attrs + '>');
+      (Array.isArray(ch) ? ch : [ch]).forEach(function (c) { if (c) serialize(c, indent + 1, out); });
+      out.push(pad + '</' + node.tag + '>');
+    }
+  }
+
+  function specList(kind, d) {
+    if (kind === 'water_content') return ['D2216'];
+    if (kind === 'atterberg_limits') return ['D4318'];
+    if (kind === 'wash_200') return ['D1140'];
+    if (kind === 'gradation') {
+      var l = d.legacy ? ['D422'] : ['D6913'].concat(d.hydro.length ? ['D7928'] : []);
+      if (d.uscs) l.push('D2487');
+      return l;
+    }
+    if (kind === 'specific_gravity') return ['D854'];
+    if (kind === 'unit_weight') return ['D7263'];
+    if (kind === 'organic_content') return ['D2974'];
+    if (kind === 'compaction') return [d.effort === 'modified' ? 'D1557' : 'D698'];
+    return [{ ph: 'G51', resistivity: 'G187', sulfate: 'C1580', chloride: 'D4327' }[kind]];
+  }
+
+  function testName(kind, d) {
+    if (kind === 'compaction') return d.effort === 'modified' ? 'Modified Proctor' : 'Standard Proctor';
+    if (kind === 'gradation' && d.legacy) return 'Gradation (D422)';
+    return KINDS[kind].name;
+  }
+
+  /** (code, propertyName, typeData, uom, value) rows for a test's outcome. */
+  function results(kind, d, densityUnit) {
+    var R = function (code, name, type, uom, value) { return { code: code, name: name, type: type, uom: uom, value: value }; };
+    switch (kind) {
+      case 'water_content': return [R('water_content_natural', 'Moisture Content', 'double', '%', d.w)];
+      case 'atterberg_limits':
+        if (d.nonPlastic) {
+          var np = [];
+          if (d.ll != null) np.push(R('liquid_limit', 'Liquid Limit', 'integer', null, Math.round(d.ll)));
+          np.push(R('non_plastic', 'Non Plastic', 'boolean', null, 'true'));
+          return np;
+        }
+        return [R('liquid_limit', 'Liquid Limit', 'integer', null, d.ll),
+                R('plastic_limit', 'Plastic Limit', 'integer', null, d.pl),
+                R('plasticity_index', 'Plasticity Index', 'integer', null, d.pi)];
+      case 'wash_200': return [R('percent_fines', 'Percent Passing No. 200 Sieve', 'double', '%', d.p200)];
+      case 'gradation':
+        var g = d.summary, rows = [];
+        if (g.gravel != null) rows.push(R('percent_gravel', 'Percent Gravel', 'double', '%', g.gravel),
+                                        R('percent_sand', 'Percent Sand', 'double', '%', g.sand));
+        if (g.silt != null) rows.push(R('percent_silt', 'Percent Silt', 'double', '%', g.silt),
+                                      R('clay_percent_2_micron', 'Percent Clay (< 2 um)', 'double', '%', g.clay));
+        if (g.fines != null) rows.push(R('percent_fines', 'Percent Fines', 'double', '%', g.fines));
+        [10, 30, 50, 60].forEach(function (p) {
+          if (g['d' + p] != null) rows.push(R('d' + p, 'D' + p, 'double', 'mm', g['d' + p]));
+        });
+        if (g.cu != null) rows.push(R('coef_uniformity', 'Coefficient of Uniformity', 'double', null, g.cu),
+                                    R('coef_curvature', 'Coefficient of Curvature', 'double', null, g.cc));
+        if (d.uscs) {
+          rows.push(R('uscs_symbol', 'USCS Group Symbol', 'string', null, d.uscs.symbol));
+          if (d.uscs.name) rows.push(R('uscs_group_name', 'USCS Group Name', 'string', null, d.uscs.name));
+        }
+        return rows;
+      case 'specific_gravity': return [R('specific_gravity_solids', 'Specific Gravity of Solids', 'double', null, d.gs)];
+      case 'unit_weight':
+        var u = [];
+        // the published dictionary has no unit_weight code for lab tests;
+        // bulk_density carries the moist value
+        if (d.moist != null) u.push(R('bulk_density', 'Moist Density', 'double', densityUnit, d.moist));
+        var dry = d.dry != null ? d.dry : d.dryComputed;
+        if (dry != null) u.push(R('dry_density', 'Dry Density', 'double', densityUnit, dry));
+        if (d.w != null) u.push(R('water_content_natural', 'Moisture Content', 'double', '%', d.w));
+        return u;
+      case 'organic_content': return [R('LOI', 'Organic Content (Loss on Ignition)', 'double', '%', d.loi)];
+      case 'compaction':
+        var c = [];
+        if (d.mdd != null) c.push(R('dry_density_max', 'Maximum Dry Density', 'double', densityUnit, d.mdd));
+        if (d.omc != null) c.push(R('water_content_optimum', 'Optimum Water Content', 'double', '%', d.omc));
+        if (d.gs != null) c.push(R('specific_gravity_solids', 'Specific Gravity of Solids', 'double', null, d.gs));
+        return c;
+      case 'ph': return [R('pH', 'pH', 'double', null, d.value)];
+      case 'resistivity': return [R('resistivity', 'Minimum Resistivity', 'double', 'ohm.cm', d.value)];
+      case 'sulfate': return [R('sulfate_content', 'Water-Soluble Sulfate', 'double', 'ppm', d.value)];
+      case 'chloride': return [R('chloride_content', 'Water-Soluble Chloride', 'double', 'ppm', d.value)];
+    }
+    throw new Error('unknown test kind ' + kind);
+  }
+
+  function fmtValue(r) {
+    if (r.type === 'integer') return String(Math.round(r.value));
+    if (r.type === 'string' || r.type === 'boolean') return String(r.value);
+    return fmt(r.value);
+  }
+
+  function procedureDetails(kind, d, tid, uid, densityUnit) {
+    var out = [];
+    if (kind === 'water_content') {
+      if (d.dryingTemp != null) out.push(E('dryingTemperature', { uom: 'degC' }, fmt(d.dryingTemp)));
+    } else if (kind === 'atterberg_limits') {
+      var prep = String(d.prep || '').toLowerCase().trim();
+      if (prep === 'wet' || prep === 'dry') out.push(E('sieveProcedure', {}, prep));
+      var m = String(d.llMethod || '').toLowerCase().replace(/[^a-z]/g, '');
+      if (m === 'multipoint' || m === 'onepoint' || m === 'singlepoint') {
+        out.push(E('multiPointLLmethod', {}, m === 'multipoint' ? 'true' : 'false'));
+      }
+    } else if (kind === 'wash_200') {
+      out.push(E('sieveAnalysis', {}, E('SieveAnalysis', { 'gml:id': uid('SV_' + tid) }, [
+        E('coarseFractionWetSieved', {}, 'true'),
+        E('gradingData', {}, E('Grading', { 'gml:id': uid('GR_' + tid + '_1') }, [
+          E('particleSize', { uom: 'mm' }, '0.075'),
+          E('sieveNumber', {}, 'No. 200'),
+          E('percentPassing', { uom: '%' }, fmt(d.p200))
+        ]))
+      ])));
+    } else if (kind === 'gradation') {
+      var n = 0;
+      if (d.sieves.length) {
+        var rows = [E('coarseFractionWetSieved', {}, 'true')];
+        d.sieves.forEach(function (p) {
+          n++;
+          rows.push(E('gradingData', {}, E('Grading', { 'gml:id': uid('GR_' + tid + '_' + n) }, [
+            E('particleSize', { uom: 'mm' }, fmt(p.size)),
+            p.sieve ? E('sieveNumber', {}, p.sieve) : null,
+            E('percentPassing', { uom: '%' }, fmt(p.pass))
+          ])));
+        });
+        out.push(E('sieveAnalysis', {}, E('SieveAnalysis', { 'gml:id': uid('SV_' + tid) }, rows)));
+      }
+      if (d.hydro.length) {
+        var sed = [];
+        d.hydro.forEach(function (p) {
+          n++;
+          sed.push(E('sedimentationData', {}, E('Sedimentation', { 'gml:id': uid('SED_' + tid + '_' + n) }, [
+            E('particleDiameter', { uom: 'mm' }, fmt(p.size)),
+            E('percentPassing', { uom: '%' }, fmt(p.pass))
+          ])));
+        });
+        out.push(E('hydrometer', {}, E('Hydrometer', { 'gml:id': uid('HY_' + tid) }, sed)));
+      }
+    } else if (kind === 'specific_gravity') {
+      out.push(E('waterTemperature', { uom: 'degC' }, fmt(d.waterTemp)));
+    } else if (kind === 'organic_content') {
+      out.push(E('ignitionTemperature', { uom: 'degC' }, fmt(d.ignitionTemp)));
+    } else if (kind === 'compaction') {
+      out.push(E('compactionTestType', {}, d.effort === 'modified' ? 'Modified Proctor' : 'Proctor'));
+      d.trials.forEach(function (t, i) {
+        var no = t.n != null && t.n > 0 && Math.round(t.n) === t.n ? t.n : i + 1;
+        out.push(E('trial', {}, E('LabCompactionTestTrial', { 'gml:id': uid('TRL_' + tid + '_' + (i + 1)) }, [
+          E('trialNo', {}, String(no)),
+          E('waterContent', { uom: '%' }, fmt(t.w)),
+          E('dryDensity', { uom: densityUnit }, fmt(t.dd))
+        ])));
+      });
+    }
+    return out;
+  }
+
+  /** Build the DIGGS 3.0 XML string for a dataset. */
+  function generateDiggs(ds, settings) {
+    var depthUnit = ds.depthUnit || 'ft';
+    var densityUnit = DENSITY_UNITS[settings.densityUnit] ? settings.densityUnit : 'lbm/ft3';
+    var used = {};
+    function uid(raw) {
+      var base = safeId(raw), id = base, i = 2;
+      while (used[id]) id = base + '_' + (i++);
+      used[id] = true;
+      return id;
+    }
+    var today = settings.today || new Date().toISOString().slice(0, 10);
+    var projectId = uid('Project_1');
+    var root = [];
+
+    root.push(E('documentInformation', {}, E('DocumentInformation', { 'gml:id': uid('DocumentInfo') }, [
+      E('creationDate', {}, today),
+      E('auditTrail', {}, E('Remark', {}, E('content', {},
+        'Generated from laboratory result tables by the Geosetta Lab Results to DIGGS tool' +
+        (settings.toolVersion ? ' (version ' + settings.toolVersion + ')' : ''))))
+    ])));
+
+    var roles = [];
+    function role(code, name) {
+      roles.push(E('role', {}, E('Role', {}, [
+        E('rolePerformed', { codeSpace: ROLES + '#' + code }, code),
+        E('businessAssociate', {}, E('BusinessAssociate', { 'gml:id': uid('BA_' + code + '_' + name) },
+          E('gml:name', {}, name)))
+      ])));
+    }
+    if (settings.client) role('client', settings.client);
+    // "preparer" is the only provider-type role the dictionary allows on a Project
+    if (settings.labName) role('preparer', settings.labName);
+    root.push(E('project', {}, E('Project', { 'gml:id': projectId }, [
+      settings.projectNumber ? E('gml:description', {}, 'Project number: ' + settings.projectNumber) : null,
+      E('gml:name', {}, settings.projectName || 'Laboratory testing')
+    ].concat(roles))));
+
+    var bh = {};
+    ds.boringOrder.forEach(function (id) {
+      var b = ds.borings[id];
+      var bhId = uid('BH_' + id), lrsId = uid('lrs_' + id), leId = uid('LE_' + id);
+      bh[id] = { id: bhId, lrs: lrsId };
+      var kids = [E('gml:name', {}, id), E('investigationTarget', {}, 'Natural Ground'),
+                  E('projectRef', { 'xlink:href': '#' + projectId })];
+      var hasXY = b.lat != null && b.lon != null, hasZ = b.elev != null;
+      var crs = compoundCrs(depthUnit), labels = 'dega dega ' + depthUnit;
+      if (hasXY) {
+        // EPSG:4326 axis order is latitude, longitude
+        kids.push(E('referencePoint', {}, E('PointLocation', hasZ
+          ? { 'gml:id': uid('pl_' + id), srsDimension: '3', srsName: crs, uomLabels: labels }
+          : { 'gml:id': uid('pl_' + id), srsDimension: '2', srsName: EPSG + '4326', uomLabels: 'dega dega' },
+          E('gml:pos', {}, hasZ ? fmt(b.lat) + ' ' + fmt(b.lon) + ' ' + fmt(b.elev) : fmt(b.lat) + ' ' + fmt(b.lon)))));
+      }
+      if (hasXY && hasZ) {
+        // centerLine as lon lat elev, matching core/vlm_to_diggs.py
+        kids.push(E('centerLine', {}, E('LinearExtent',
+          { 'gml:id': leId, srsDimension: '3', srsName: crs, uomLabels: labels },
+          E('gml:posList', {}, [fmt(b.lon), fmt(b.lat), fmt(b.elev), fmt(b.lon), fmt(b.lat),
+                                fmt(round(b.elev - b.total, 6))].join(' ')))));
+      } else {
+        kids.push(E('centerLine', {}, E('LinearExtent', { 'gml:id': leId, srsDimension: '1' },
+          E('gml:posList', {}, '0 ' + fmt(b.total)))));
+      }
+      kids.push(E('linearReferencing', {}, E('LinearSpatialReferenceSystem', { 'gml:id': lrsId }, [
+        E('gml:identifier', { codeSpace: '' }),
+        E('glr:linearElement', { 'xlink:href': '#' + leId }),
+        E('glr:lrm', {}, E('glr:LinearReferencingMethod', { 'gml:id': uid(leId + '_lrm') }, [
+          E('glr:name', {}, 'chainage'), E('glr:type', {}, 'absolute'), E('glr:units', {}, depthUnit)
+        ]))
+      ])));
+      if (b.date) {
+        kids.push(E('whenConstructed', {}, E('TimeInterval', { 'gml:id': uid('time_' + id) },
+          [E('start', {}, b.date), E('end', {}, b.date)])));
+      }
+      kids.push(E('totalMeasuredDepth', { uom: depthUnit }, fmt(b.total)));
+      root.push(E('samplingFeature', {}, E('Borehole', { 'gml:id': bhId }, kids)));
+    });
+
+    var activities = [], samples = [], measurements = [];
+    ds.sampleOrder.forEach(function (k) {
+      var s = ds.samples[k];
+      if (s.top == null) return;
+      var b = bh[s.boring];
+      var saId = uid('SA_' + s.boring + '_' + s.id), smpId = uid('SMP_' + s.boring + '_' + s.id),
+          spId = uid('SP_' + s.boring + '_' + s.id);
+      var isPoint = s.bottom == null || Math.abs(s.bottom - s.top) < 1e-9;
+      var loc = function (idBase) {
+        return isPoint
+          ? E('PointLocation', { 'gml:id': uid('PL_' + idBase), srsDimension: '1', srsName: '#' + b.lrs },
+              E('gml:pos', {}, fmt(s.top)))
+          : E('LinearExtent', { 'gml:id': uid('LE_' + idBase), srsDimension: '1', srsName: '#' + b.lrs },
+              E('gml:posList', {}, fmt(s.top) + ' ' + fmt(s.bottom)));
+      };
+      activities.push(E('samplingActivity', {}, E('SamplingActivity', { 'gml:id': saId }, [
+        E('gml:name', {}, 'Sampling of ' + s.boring + ' ' + s.id + (s.type ? ' (' + s.type + ')' : '')),
+        E('investigationTarget', {}, 'Natural Ground'),
+        E('projectRef', { 'xlink:href': '#' + projectId }),
+        E('samplingFeatureRef', { 'xlink:href': '#' + b.id }),
+        E('samplingLocation', {}, loc(saId)),
+        E('activityType', {}, 'collect'),
+        // Sample requires a sampleProducedRef to this record
+        E('sampleProduced', {}, E('SampleProduced', { 'gml:id': spId }, E('location', {}, loc(spId))))
+      ])));
+      samples.push(E('sample', {}, E('Sample', { 'gml:id': smpId }, [
+        E('gml:name', {}, s.id),
+        E('projectRef', { 'xlink:href': '#' + projectId }),
+        E('samplingActivityRef', { 'xlink:href': '#' + saId }),
+        E('sampleProducedRef', { 'xlink:href': '#' + spId }),
+        E('classification', {}, 'Soil')
+      ])));
+
+      s.tests.forEach(function (t) {
+        var d = t.data;
+        var rows = results(t.kind, d, densityUnit);
+        if (!rows.length) return;
+        var tid = uid('T_' + s.boring + '_' + s.id + '_' + t.kind);
+        var props = rows.map(function (r, i) {
+          return E('Property', { index: String(i + 1), 'gml:id': uid('P_' + tid + '_' + (i + 1)) }, [
+            E('propertyName', {}, r.name),
+            E('typeData', {}, r.type),
+            E('propertyClass', { codeSpace: PROPS + '#' + r.code }, r.code),
+            r.uom ? E('uom', {}, r.uom) : null
+          ]);
+        });
+        var specs = specList(t.kind, d).map(function (a, i) {
+          return E('testProcedureMethod', {}, E('Specification', { 'gml:id': uid('SPEC_' + tid + '_' + (i + 1)) }, [
+            E('accredtingBody', {}, 'ASTM'), // (sic) schema spelling
+            E('standardReferenceNumber', {}, a),
+            E('standardTitle', {}, SPECS[a])
+          ]));
+        });
+        measurements.push(E('measurement', {}, E('Test', { 'gml:id': tid }, [
+          E('gml:name', {}, testName(t.kind, d) + ' — ' + s.boring + ' ' + s.id),
+          E('investigationTarget', {}, 'Natural Ground'),
+          E('projectRef', { 'xlink:href': '#' + projectId }),
+          E('samplingFeatureRef', { 'xlink:href': '#' + b.id }),
+          E('sampleRef', { 'xlink:href': '#' + smpId }),
+          E('outcome', {}, E('TestResult', { 'gml:id': uid('TR_' + tid) }, [
+            E('location', {}, E('PointLocation', { 'gml:id': uid('PL_' + tid), srsDimension: '1', srsName: '#' + b.lrs },
+              E('gml:pos', {}, fmt(s.top)))),
+            E('results', {}, E('ResultSet', {}, [
+              E('parameters', {}, E('PropertyParameters', { 'gml:id': uid('PP_' + tid) }, E('properties', {}, props))),
+              // ";" between tuples: text results (USCS group names) contain spaces
+              E('dataValues', { cs: ',', ts: ';', decimal: '.' }, rows.map(fmtValue).join(','))
+            ]))
+          ])),
+          E('procedure', {}, E(KINDS[t.kind].proc, { 'gml:id': uid('PR_' + tid) },
+            specs.concat(procedureDetails(t.kind, d, tid, uid, densityUnit))))
+        ])));
+      });
+    });
+
+    root = root.concat(activities, samples, measurements);
+    var doc = E('Diggs', {
+      xmlns: NS_DIGGS,
+      'xmlns:glr': 'http://www.opengis.net/gml/3.3/lr',
+      'xmlns:gml': 'http://www.opengis.net/gml/3.2',
+      'xmlns:xlink': 'http://www.w3.org/1999/xlink',
+      'xmlns:xsi': 'http://www.w3.org/2001/XMLSchema-instance',
+      'xsi:schemaLocation': NS_DIGGS + ' https://diggsml.org/schema-dev/Diggs.xsd',
+      'gml:id': 'Lab_Results'
+    }, root);
+    var out = ['<?xml version="1.0" encoding="UTF-8"?>'];
+    serialize(doc, 0, out);
+    return out.join('\n') + '\n';
+  }
+
+  function summarize(ds) {
+    var byKind = {};
+    ds.tests.forEach(function (t) {
+      var label = testName(t.kind, t.data);
+      byKind[label] = (byKind[label] || 0) + 1;
+    });
+    return { borings: ds.boringOrder.length, samples: ds.sampleOrder.length, tests: ds.tests.length, byKind: byKind };
+  }
+
+  // ---------------------------------------------------------------------
+  // Minimal ZIP writer (store only) for "download all templates"
+  // ---------------------------------------------------------------------
+  var CRC_TABLE = null;
+  function crc32(bytes) {
+    if (!CRC_TABLE) {
+      CRC_TABLE = [];
+      for (var n = 0; n < 256; n++) {
+        var c = n;
+        for (var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+        CRC_TABLE[n] = c >>> 0;
+      }
+    }
+    var crc = 0xFFFFFFFF;
+    for (var i = 0; i < bytes.length; i++) crc = CRC_TABLE[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  function utf8(s) {
+    if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(s);
+    var bin = unescape(encodeURIComponent(s)), out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  /** entries: [{name, text}] -> Uint8Array of a .zip */
+  function makeZip(entries) {
+    var parts = [], central = [], offset = 0;
+    function u16(v) { return [v & 255, (v >>> 8) & 255]; }
+    function u32(v) { return [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255]; }
+    entries.forEach(function (e) {
+      var name = utf8(e.name), data = utf8(e.text), crc = crc32(data);
+      var common = [].concat(u16(20), u16(0x0800), u16(0), u16(0), u16(0x21), u32(crc),
+                             u32(data.length), u32(data.length), u16(name.length), u16(0));
+      var local = new Uint8Array([].concat(u32(0x04034b50), common));
+      parts.push(local, name, data);
+      central.push(new Uint8Array([].concat(u32(0x02014b50), u16(20), common, u16(0), u16(0), u16(0),
+                                            u32(0), u32(offset))), name);
+      offset += local.length + name.length + data.length;
+    });
+    var cdSize = central.reduce(function (a, p) { return a + p.length; }, 0);
+    var end = new Uint8Array([].concat(u32(0x06054b50), u16(0), u16(0), u16(entries.length),
+                                       u16(entries.length), u32(cdSize), u32(offset), u16(0)));
+    var all = parts.concat(central, [end]);
+    var total = all.reduce(function (a, p) { return a + p.length; }, 0);
+    var out = new Uint8Array(total), pos = 0;
+    all.forEach(function (p) { out.set(p, pos); pos += p.length; });
+    return out;
+  }
+
+  // ---------------------------------------------------------------------
+  // .xlsx reader: ZIP + raw inflate + the few SpreadsheetML parts we need.
+  // No libraries; works offline and under node.
+  // ---------------------------------------------------------------------
+
+  /*
+   * Raw DEFLATE decoder (RFC 1951), ported from tiny-inflate
+   * (https://github.com/foliojs/tiny-inflate), used under this license:
+   *
+   * MIT License
+   *
+   * Copyright (c) 2015-present Devon Govett
+   *
+   * Permission is hereby granted, free of charge, to any person obtaining a copy
+   * of this software and associated documentation files (the "Software"), to deal
+   * in the Software without restriction, including without limitation the rights
+   * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+   * copies of the Software, and to permit persons to whom the Software is
+   * furnished to do so, subject to the following conditions:
+   *
+   * The above copyright notice and this permission notice shall be included in all
+   * copies or substantial portions of the Software.
+   *
+   * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   * SOFTWARE.
+   */
+  var Inflate = (function () {
+    function Tree() { this.table = new Uint16Array(16); this.trans = new Uint16Array(288); }
+    var sltree = new Tree(), sdtree = new Tree();
+    var lengthBits = new Uint8Array(30), lengthBase = new Uint16Array(30);
+    var distBits = new Uint8Array(30), distBase = new Uint16Array(30);
+    var clcidx = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
+    var codeTree = new Tree(), lengths = new Uint8Array(288 + 32), offs = new Uint16Array(16);
+
+    function buildBitsBase(bits, base, delta, first) {
+      var i, sum;
+      for (i = 0; i < delta; ++i) bits[i] = 0;
+      for (i = 0; i < 30 - delta; ++i) bits[i + delta] = (i / delta) | 0;
+      for (sum = first, i = 0; i < 30; ++i) { base[i] = sum; sum += 1 << bits[i]; }
+    }
+    function buildFixedTrees(lt, dt) {
+      var i;
+      for (i = 0; i < 7; ++i) lt.table[i] = 0;
+      lt.table[7] = 24; lt.table[8] = 152; lt.table[9] = 112;
+      for (i = 0; i < 24; ++i) lt.trans[i] = 256 + i;
+      for (i = 0; i < 144; ++i) lt.trans[24 + i] = i;
+      for (i = 0; i < 8; ++i) lt.trans[24 + 144 + i] = 280 + i;
+      for (i = 0; i < 112; ++i) lt.trans[24 + 144 + 8 + i] = 144 + i;
+      for (i = 0; i < 5; ++i) dt.table[i] = 0;
+      dt.table[5] = 32;
+      for (i = 0; i < 32; ++i) dt.trans[i] = i;
+    }
+    function buildTree(t, lens, off, num) {
+      var i, sum;
+      for (i = 0; i < 16; ++i) t.table[i] = 0;
+      for (i = 0; i < num; ++i) t.table[lens[off + i]]++;
+      t.table[0] = 0;
+      for (sum = 0, i = 0; i < 16; ++i) { offs[i] = sum; sum += t.table[i]; }
+      for (i = 0; i < num; ++i) if (lens[off + i]) t.trans[offs[lens[off + i]]++] = i;
+    }
+    function refill(d) {
+      while (d.bitcount < 24) {
+        if (d.si >= d.src.length + 4) throw new Error('corrupt compressed data');
+        d.tag |= (d.src[d.si++] | 0) << d.bitcount;
+        d.bitcount += 8;
+      }
+    }
+    function getBit(d) {
+      if (!d.bitcount--) { d.tag = d.src[d.si++] | 0; d.bitcount = 7; }
+      var bit = d.tag & 1;
+      d.tag >>>= 1;
+      return bit;
+    }
+    function readBits(d, num, base) {
+      if (!num) return base;
+      refill(d);
+      var val = d.tag & (0xffff >>> (16 - num));
+      d.tag >>>= num;
+      d.bitcount -= num;
+      return val + base;
+    }
+    function decodeSymbol(d, t) {
+      refill(d);
+      var sum = 0, cur = 0, len = 0, tag = d.tag;
+      do {
+        cur = 2 * cur + (tag & 1);
+        tag >>>= 1;
+        ++len;
+        if (len > 15) throw new Error('corrupt compressed data');
+        sum += t.table[len];
+        cur -= t.table[len];
+      } while (cur >= 0);
+      d.tag = tag;
+      d.bitcount -= len;
+      return t.trans[sum + cur];
+    }
+    function decodeTrees(d, lt, dt) {
+      var hlit = readBits(d, 5, 257), hdist = readBits(d, 5, 1), hclen = readBits(d, 4, 4);
+      var i, num, length;
+      for (i = 0; i < 19; ++i) lengths[i] = 0;
+      for (i = 0; i < hclen; ++i) lengths[clcidx[i]] = readBits(d, 3, 0);
+      buildTree(codeTree, lengths, 0, 19);
+      for (num = 0; num < hlit + hdist;) {
+        var sym = decodeSymbol(d, codeTree);
+        if (sym === 16) {
+          var prev = lengths[num - 1];
+          for (length = readBits(d, 2, 3); length; --length) lengths[num++] = prev;
+        } else if (sym === 17) {
+          for (length = readBits(d, 3, 3); length; --length) lengths[num++] = 0;
+        } else if (sym === 18) {
+          for (length = readBits(d, 7, 11); length; --length) lengths[num++] = 0;
+        } else {
+          lengths[num++] = sym;
+        }
+      }
+      buildTree(lt, lengths, 0, hlit);
+      buildTree(dt, lengths, hlit, hdist);
+    }
+    function put(d, byte) {
+      if (d.len >= d.out.length) {
+        var bigger = new Uint8Array(d.out.length * 2 + 1024);
+        bigger.set(d.out);
+        d.out = bigger;
+      }
+      d.out[d.len++] = byte;
+    }
+    function inflateBlock(d, lt, dt) {
+      for (;;) {
+        var sym = decodeSymbol(d, lt);
+        if (sym === 256) return;
+        if (sym < 256) { put(d, sym); continue; }
+        sym -= 257;
+        var length = readBits(d, lengthBits[sym], lengthBase[sym]);
+        var dist = decodeSymbol(d, dt);
+        var from = d.len - readBits(d, distBits[dist], distBase[dist]);
+        if (from < 0) throw new Error('corrupt compressed data');
+        for (var i = 0; i < length; ++i) put(d, d.out[from + i]);
+      }
+    }
+    function inflateStored(d) {
+      // give back whole bytes the bit buffer read ahead, drop the partial one
+      while (d.bitcount >= 8) { d.si--; d.bitcount -= 8; }
+      d.bitcount = 0;
+      d.tag = 0;
+      var length = d.src[d.si] | (d.src[d.si + 1] << 8);
+      var inv = d.src[d.si + 2] | (d.src[d.si + 3] << 8);
+      if (length !== (~inv & 0xffff)) throw new Error('corrupt compressed data');
+      d.si += 4;
+      for (var i = 0; i < length; ++i) put(d, d.src[d.si++]);
+    }
+
+    buildFixedTrees(sltree, sdtree);
+    buildBitsBase(lengthBits, lengthBase, 4, 3);
+    buildBitsBase(distBits, distBase, 2, 1);
+    lengthBits[28] = 0;
+    lengthBase[28] = 258;
+
+    return function inflateRaw(src, sizeHint) {
+      var d = { src: src, si: 0, tag: 0, bitcount: 0, out: new Uint8Array(sizeHint || src.length * 4 + 1024),
+                len: 0, lt: new Tree(), dt: new Tree() };
+      var last;
+      do {
+        last = getBit(d);
+        var type = readBits(d, 2, 0);
+        if (type === 0) inflateStored(d);
+        else if (type === 1) inflateBlock(d, sltree, sdtree);
+        else if (type === 2) { decodeTrees(d, d.lt, d.dt); inflateBlock(d, d.lt, d.dt); }
+        else throw new Error('corrupt compressed data');
+      } while (!last);
+      return d.out.subarray(0, d.len);
+    };
+  })();
+
+  /** {path: Uint8Array} for every file in a ZIP archive. */
+  function readZip(bytes) {
+    var dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    var eocd = -1;
+    for (var i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
+      if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd < 0) throw new Error('not a ZIP archive');
+    var count = dv.getUint16(eocd + 10, true), p = dv.getUint32(eocd + 16, true);
+    var files = {};
+    for (var n = 0; n < count; n++) {
+      if (dv.getUint32(p, true) !== 0x02014b50) throw new Error('damaged ZIP directory');
+      var method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true),
+          usize = dv.getUint32(p + 24, true), nlen = dv.getUint16(p + 28, true),
+          elen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true),
+          local = dv.getUint32(p + 42, true);
+      var name = utf8decode(bytes.subarray(p + 46, p + 46 + nlen));
+      var start = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true);
+      var data = bytes.subarray(start, start + csize);
+      if (method === 0) files[name] = data;
+      else if (method === 8) files[name] = Inflate(data, usize);
+      else files[name] = null;  // unsupported compression; only fails if this part is needed
+      p += 46 + nlen + elen + clen;
+    }
+    return files;
+  }
+
+  function utf8decode(bytes) {
+    if (typeof TextDecoder !== 'undefined') return new TextDecoder('utf-8').decode(bytes);
+    var s = '';
+    for (var i = 0; i < bytes.length; i += 8192) {
+      s += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+    }
+    return decodeURIComponent(escape(s));
+  }
+
+  function xmlText(s) {
+    return String(s)
+      .replace(/&(lt|gt|amp|quot|apos|#\d+|#x[0-9a-fA-F]+);/g, function (m, e) {
+        if (e === 'lt') return '<';
+        if (e === 'gt') return '>';
+        if (e === 'amp') return '&';
+        if (e === 'quot') return '"';
+        if (e === 'apos') return "'";
+        var code = e.charAt(1) === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+        return String.fromCodePoint(code);
+      })
+      // Excel escapes some characters as _xHHHH_ in strings
+      .replace(/_x([0-9A-Fa-f]{4})_/g, function (m, hex) { return String.fromCharCode(parseInt(hex, 16)); });
+  }
+
+  function attr(attrs, name) {
+    var m = new RegExp('(?:^|\\s)' + name + '\\s*=\\s*("([^"]*)"|\'([^\']*)\')').exec(attrs);
+    return m ? xmlText(m[2] !== undefined ? m[2] : m[3]) : null;
+  }
+
+  /** Text of <t> runs, skipping phonetic <rPh> runs. */
+  function runText(xml) {
+    var out = '';
+    xml.replace(/<rPh\b[\s\S]*?<\/rPh>/g, '').replace(/<t\b[^>]*?(?:\/>|>([\s\S]*?)<\/t>)/g, function (m, t) {
+      out += t ? xmlText(t) : '';
+      return m;
+    });
+    return out;
+  }
+
+  function parseSharedStrings(xml) {
+    var out = [];
+    String(xml || '').replace(/<si\b[^>]*?(?:\/>|>([\s\S]*?)<\/si>)/g, function (m, inner) {
+      out.push(inner ? runText(inner) : '');
+      return m;
+    });
+    return out;
+  }
+
+  function colIndex(ref) {
+    var m = /^([A-Z]+)/.exec(ref || '');
+    if (!m) return -1;
+    var n = 0;
+    for (var i = 0; i < m[1].length; i++) n = n * 26 + (m[1].charCodeAt(i) - 64);
+    return n - 1;
+  }
+
+  /** Rows (arrays of strings) of one worksheet part. */
+  function parseSheetXml(xml, shared) {
+    var rows = [];
+    var data = /<sheetData\b[^>]*?(?:\/>|>([\s\S]*?)<\/sheetData>)/.exec(xml || '');
+    if (!data || !data[1]) return rows;
+    var nextRow = 0;
+    data[1].replace(/<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g, function (m, rattrs, inner) {
+      var rnum = attr(rattrs, 'r');
+      var ri = rnum ? parseInt(rnum, 10) - 1 : nextRow;
+      nextRow = ri + 1;
+      var row = [], nextCol = 0;
+      (inner || '').replace(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g, function (cm, cattrs, cinner) {
+        var ref = attr(cattrs, 'r');
+        var ci = ref ? colIndex(ref) : nextCol;
+        nextCol = ci + 1;
+        var type = attr(cattrs, 't') || 'n';
+        var body = cinner || '';
+        var v = /<v\b[^>]*>([\s\S]*?)<\/v>/.exec(body);
+        var val = v ? xmlText(v[1]) : '';
+        if (type === 's') val = v ? (shared[parseInt(val, 10)] || '') : '';
+        else if (type === 'inlineStr') {
+          var is = /<is\b[^>]*>([\s\S]*?)<\/is>/.exec(body);
+          val = is ? runText(is[1]) : '';
+        } else if (type === 'b') val = val === '1' ? 'TRUE' : (val === '0' ? 'FALSE' : val);
+        while (row.length < ci) row.push('');
+        row[ci] = val;
+        return cm;
+      });
+      while (rows.length < ri) rows.push([]);
+      rows[ri] = row;
+      return m;
+    });
+    return rows;
+  }
+
+  function resolvePart(target) {
+    target = String(target || '');
+    if (target.charAt(0) === '/') return target.slice(1);
+    var parts = ('xl/' + target).split('/'), out = [];
+    parts.forEach(function (p) { if (p === '..') out.pop(); else if (p && p !== '.') out.push(p); });
+    return out.join('/');
+  }
+
+  /** [{name, rows, hidden}] for the worksheets of an .xlsx file, in workbook order. */
+  function readWorkbook(bytes) {
+    if (!(bytes instanceof Uint8Array)) bytes = new Uint8Array(bytes);
+    if (bytes[0] === 0xD0 && bytes[1] === 0xCF) {
+      throw new Error('this is an old-style .xls workbook. Open it in Excel and save it as .xlsx.');
+    }
+    var files;
+    try { files = readZip(bytes); } catch (e) { throw new Error('not a readable .xlsx workbook (' + e.message + ')'); }
+    var part = function (name) { return files[name] ? utf8decode(files[name]) : null; };
+    var wb = part('xl/workbook.xml');
+    if (!wb) throw new Error('not an Excel .xlsx workbook');
+    var rels = {};
+    (part('xl/_rels/workbook.xml.rels') || '').replace(/<Relationship\b([^>]*?)\/?>/g, function (m, a) {
+      rels[attr(a, 'Id')] = resolvePart(attr(a, 'Target'));
+      return m;
+    });
+    var shared = parseSharedStrings(part('xl/sharedStrings.xml'));
+    var sheets = [];
+    wb.replace(/<sheet\b([^>]*?)\/?>/g, function (m, a) {
+      var rid = attr(a, 'r:id') || (/\bid\s*=\s*"([^"]*)"/.exec(a) || [])[1];
+      var path = rels[rid];
+      var xml = path ? part(path) : null;
+      if (xml === null) return m;  // chart sheets and the like
+      var state = attr(a, 'state');
+      sheets.push({ name: attr(a, 'name'), rows: parseSheetXml(xml, shared),
+                    hidden: state === 'hidden' || state === 'veryHidden' });
+      return m;
+    });
+    return sheets;
+  }
+
+  /** Loaded-file entries for the sheets of a workbook (Instructions and
+   *  empty sheets skipped). */
+  function workbookEntries(fileName, bytes) {
+    var entries = [];
+    readWorkbook(bytes).forEach(function (sh) {
+      if (sh.hidden || /^(instructions?|read ?me|help)$/i.test(sh.name.trim())) return;
+      var nonBlank = sh.rows.filter(function (r) { return r.some(function (v) { return String(v).trim() !== ''; }); });
+      if (nonBlank.length < 2) return;  // empty, or headers only
+      var byName = null;
+      var norm = sh.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+      TEMPLATES.forEach(function (t) {
+        if (norm === t.id || norm === t.sheet.toLowerCase().replace(/[^a-z0-9]+/g, '_')) byName = t.id;
+      });
+      entries.push({ name: fileName + ' \u203a ' + sh.name, source: fileName, sheet: true,
+                     detectName: byName || sh.name, rows: sh.rows, template: '' });
+    });
+    return entries;
+  }
+
+  // ---------------------------------------------------------------------
+  // .xlsx writer: the template workbook, built in the page (no server).
+  // Minimal SpreadsheetML: inline strings, one style sheet, frozen header
+  // rows, text-formatted ID columns, dropdowns, and per-column input
+  // messages (the tooltip Excel shows when a cell is selected).
+  // ---------------------------------------------------------------------
+  var WB_MAX_ROW = 2000;
+  var NS_MAIN = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+  var NS_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+  var NS_PKG_REL = 'http://schemas.openxmlformats.org/package/2006/relationships';
+  var XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+
+  // cellXfs indexes in STYLES_XML
+  var ST = { normal: 0, reqHead: 1, optHead: 2, text: 3, title: 4, heading: 5, bold: 6, wrap: 7, wrapShade: 8, boldWrap: 9 };
+  var STYLES_XML = XML_HEAD +
+    '<styleSheet xmlns="' + NS_MAIN + '">' +
+    '<fonts count="5">' +
+    '<font><sz val="11"/><name val="Calibri"/><family val="2"/></font>' +
+    '<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/><family val="2"/></font>' +
+    '<font><b/><sz val="11"/><color rgb="FF2C2C2C"/><name val="Calibri"/><family val="2"/></font>' +
+    '<font><b/><sz val="16"/><color rgb="FF2B5B2B"/><name val="Calibri"/><family val="2"/></font>' +
+    '<font><b/><sz val="12"/><color rgb="FF5C3D1E"/><name val="Calibri"/><family val="2"/></font>' +
+    '</fonts>' +
+    '<fills count="5">' +
+    '<fill><patternFill patternType="none"/></fill>' +
+    '<fill><patternFill patternType="gray125"/></fill>' +
+    '<fill><patternFill patternType="solid"><fgColor rgb="FF2B5B2B"/><bgColor indexed="64"/></patternFill></fill>' +
+    '<fill><patternFill patternType="solid"><fgColor rgb="FFC4A265"/><bgColor indexed="64"/></patternFill></fill>' +
+    '<fill><patternFill patternType="solid"><fgColor rgb="FFF5F0E8"/><bgColor indexed="64"/></patternFill></fill>' +
+    '</fills>' +
+    '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+    '<cellXfs count="10">' +
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+    '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>' +
+    '<xf numFmtId="0" fontId="2" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1"/>' +
+    '<xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>' +
+    '<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>' +
+    '<xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1"/>' +
+    '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>' +
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>' +
+    '<xf numFmtId="0" fontId="0" fillId="4" borderId="0" xfId="0" applyFill="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>' +
+    '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>' +
+    '</cellXfs>' +
+    '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>' +
+    '</styleSheet>';
+
+  function colLetter(i) {  // 0-based
+    var s = '';
+    for (i = i + 1; i > 0; i = Math.floor((i - 1) / 26)) s = String.fromCharCode(65 + (i - 1) % 26) + s;
+    return s;
+  }
+
+  function clip(s, n) { s = String(s); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+
+  /** A worksheet being assembled: rows of {v, s, num}, columns, validations. */
+  function Sheet(name) {
+    this.name = name; this.rows = []; this.cols = []; this.validations = []; this.frozen = false;
+  }
+  Sheet.prototype.set = function (r, c, value, style, isNumber) {
+    if (value === null || value === undefined || value === '') { if (style == null) return; value = ''; }
+    (this.rows[r] = this.rows[r] || [])[c] = { v: value, s: style || 0, num: !!isNumber };
+  };
+  Sheet.prototype.xml = function (selected) {
+    var out = [XML_HEAD, '<worksheet xmlns="' + NS_MAIN + '" xmlns:r="' + NS_REL + '">'];
+    out.push('<sheetViews><sheetView workbookViewId="0"' + (selected ? ' tabSelected="1"' : '') + '>');
+    if (this.frozen) {
+      out.push('<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>' +
+               '<selection pane="bottomLeft" activeCell="A2" sqref="A2"/>');
+    }
+    out.push('</sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/>');
+    if (this.cols.length) {
+      out.push('<cols>');
+      this.cols.forEach(function (c, i) {
+        if (!c) return;
+        out.push('<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + c.width + '" customWidth="1"' +
+                 (c.style ? ' style="' + c.style + '"' : '') + '/>');
+      });
+      out.push('</cols>');
+    }
+    out.push('<sheetData>');
+    this.rows.forEach(function (row, r) {
+      if (!row) return;
+      out.push('<row r="' + (r + 1) + '">');
+      row.forEach(function (cell, c) {
+        if (!cell) return;
+        var ref = colLetter(c) + (r + 1), s = cell.s ? ' s="' + cell.s + '"' : '';
+        if (cell.v === '') out.push('<c r="' + ref + '"' + s + '/>');
+        else if (cell.num) out.push('<c r="' + ref + '"' + s + '><v>' + esc(cell.v) + '</v></c>');
+        else {
+          var text = String(cell.v);
+          var space = /^\s|\s$|\n/.test(text) ? ' xml:space="preserve"' : '';
+          out.push('<c r="' + ref + '"' + s + ' t="inlineStr"><is><t' + space + '>' + esc(text) + '</t></is></c>');
+        }
+      });
+      out.push('</row>');
+    });
+    out.push('</sheetData>');
+    if (this.validations.length) {
+      out.push('<dataValidations count="' + this.validations.length + '">');
+      this.validations.forEach(function (d) {
+        var a = '';
+        if (d.type) a += ' type="' + d.type + '"';
+        if (d.errorStyle && d.errorStyle !== 'stop') a += ' errorStyle="' + d.errorStyle + '"';
+        if (d.operator) a += ' operator="' + d.operator + '"';
+        a += ' allowBlank="1"';
+        if (d.prompt) a += ' showInputMessage="1"';
+        if (d.error) a += ' showErrorMessage="1"';
+        if (d.errorTitle) a += ' errorTitle="' + esc(clip(d.errorTitle, 32)) + '"';
+        if (d.error) a += ' error="' + esc(clip(d.error, 225)) + '"';
+        if (d.promptTitle) a += ' promptTitle="' + esc(clip(d.promptTitle, 32)) + '"';
+        if (d.prompt) a += ' prompt="' + esc(clip(d.prompt, 255)) + '"';
+        a += ' sqref="' + d.sqref + '"';
+        out.push('<dataValidation' + a + '>' +
+                 (d.formula1 != null ? '<formula1>' + esc(d.formula1) + '</formula1>' : '') +
+                 (d.formula2 != null ? '<formula2>' + esc(d.formula2) + '</formula2>' : '') +
+                 '</dataValidation>');
+      });
+      out.push('</dataValidations>');
+    }
+    out.push('<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>');
+    out.push('</worksheet>');
+    return out.join('');
+  };
+
+  function columnRule(col) {
+    if (col.lookup === 'borings') {
+      return { type: 'list', formula1: 'BoringIds', errorStyle: 'warning', errorTitle: 'Boring not listed',
+               error: 'This boring is not on the Borings sheet. Add it there so it gets a location.' };
+    }
+    if (col.choices) {
+      var list = '"' + col.choices.join(',') + '"';
+      return col.strict === false
+        ? { type: 'list', formula1: list, errorStyle: 'information', errorTitle: 'Not a usual value',
+            error: 'Not one of the usual values. It will be kept as typed.' }
+        : { type: 'list', formula1: list, errorTitle: 'Choose from the list',
+            error: 'Pick one of: ' + col.choices.join(', ') };
+    }
+    if (col.min != null && col.max != null) {
+      return { type: 'decimal', operator: 'between', formula1: String(col.min), formula2: String(col.max),
+               errorTitle: 'Out of range', error: 'Enter a number from ' + col.min + ' to ' + col.max + '.' };
+    }
+    if (col.min != null) {
+      return { type: 'decimal', operator: 'greaterThanOrEqual', formula1: String(col.min),
+               errorTitle: 'Out of range', error: 'Enter a number of at least ' + col.min + '.' };
+    }
+    return {};
+  }
+
+  function isNumeric(s) { return /^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(String(s).trim()); }
+
+  function tableSheet(t, examples) {
+    var sh = new Sheet(t.sheet);
+    sh.frozen = true;
+    t.columns.forEach(function (col, i) {
+      var L = colLetter(i);
+      sh.set(0, i, col.name, col.required ? ST.reqHead : ST.optHead);
+      sh.cols[i] = { width: Math.max(col.width || 0, col.name.length + 3, 11), style: col.text ? ST.text : 0 };
+      var prompt = col.doc + (col.required ? ' Required.' : '') +
+                   (col.choices ? ' Choices: ' + col.choices.join(', ') + '.' : '');
+      // header note, then the data-row rule with the same note
+      sh.validations.push({ sqref: L + '1', promptTitle: col.name, prompt: prompt });
+      var rule = columnRule(col);
+      rule.sqref = L + '2:' + L + WB_MAX_ROW;
+      rule.promptTitle = col.name;
+      rule.prompt = prompt;
+      sh.validations.push(rule);
+    });
+    (examples ? t.examples : []).forEach(function (row, r) {
+      row.forEach(function (v, i) {
+        var col = t.columns[i];
+        if (v === '' || !col) return;
+        var num = !col.text && isNumeric(v);
+        sh.set(r + 1, i, v, col.text ? ST.text : 0, num);
+      });
+    });
+    return sh;
+  }
+
+  function projectSheet(examples) {
+    var sh = new Sheet(PROJECT.sheet);
+    sh.frozen = true;
+    ['field', 'value', 'notes'].forEach(function (h, i) { sh.set(0, i, h, i < 2 ? ST.reqHead : ST.optHead); });
+    sh.cols = [{ width: 16 }, { width: 42, style: ST.text }, { width: 70 }];
+    var defaults = { depth_unit: 'feet', density_unit: 'lbm/ft3' };
+    PROJECT.fields.forEach(function (f, i) {
+      var r = i + 1, ref = 'B' + (r + 1);
+      sh.set(r, 0, f.key, ST.bold);
+      sh.set(r, 1, examples ? f.example : (defaults[f.key] || ''), ST.text);
+      sh.set(r, 2, f.label + '. ' + f.doc, ST.wrap);
+      var v = { sqref: ref, promptTitle: f.label, prompt: f.doc };
+      if (f.choices) {
+        v.type = 'list';
+        v.formula1 = '"' + f.choices.join(',') + '"';
+        v.errorTitle = 'Choose from the list';
+        v.error = 'Pick one of: ' + f.choices.join(', ');
+      }
+      sh.validations.push(v);
+    });
+    return sh;
+  }
+
+  function instructionsSheet() {
+    var sh = new Sheet('Instructions');
+    sh.cols = [{ width: 22 }, { width: 24 }, { width: 12 }, { width: 80 }];
+    var r = 0;
+    sh.set(r++, 0, 'Lab Results to DIGGS: workbook template', ST.title);
+    sh.set(r++, 0, 'Fill this workbook in, then drop it on the Lab Results to DIGGS page. The page reads it on your computer and writes the DIGGS XML file.');
+    r++;
+    sh.set(r++, 0, 'How to use it', ST.heading);
+    [
+      '1. Fill in the Project sheet: project name, client, laboratory and units.',
+      '2. List each boring on the Borings sheet with latitude and longitude (WGS84 decimal degrees). DIGGS requires a location for every boring. Ground elevation is strongly recommended.',
+      '3. Enter results on the sheet for each test you ran. Leave the other sheets empty.',
+      '4. Every results row names the boring, the sample and its depth. Rows on different sheets with the same boring_id and sample_id are the same sample, so keep the IDs identical.',
+      '5. Save the workbook as .xlsx and drop it on the page.'
+    ].forEach(function (line) { sh.set(r++, 0, line); });
+    r++;
+    sh.set(r++, 0, 'Rules', ST.heading);
+    [
+      'Dark green headers are required; tan headers are optional. Select a header or a cell to see its note.',
+      'Do not rename the header cells. Sheet names may change: the page also recognises a sheet by its headers.',
+      'Enter numbers without units. Depths and elevations use the depth unit on the Project sheet; densities use its density unit.',
+      'Water content, limits, percent passing and organic content are percent. Particle sizes are mm. Resistivity is ohm-cm. Sulfate and chloride are ppm.',
+      'Gradation and Compaction take one row per sieve, hydrometer reading or trial point.',
+      'Percent gravel, sand, silt and clay, D-values, Cu, Cc, the USCS classification and the Proctor maximum are computed by the page unless you report them.',
+      'Formulas are fine: the page reads the values Excel last calculated.'
+    ].forEach(function (line) { sh.set(r++, 0, '• ' + line); });
+    r++;
+    sh.set(r++, 0, 'Column reference', ST.heading);
+    ['Sheet', 'Column', 'Required', 'Meaning'].forEach(function (h, i) { sh.set(r, i, h, ST.reqHead); });
+    r++;
+    var shade = false;
+    var addRow = function (sheet, col, req, doc) {
+      var s = shade ? ST.wrapShade : ST.wrap;
+      sh.set(r, 0, sheet, shade ? ST.wrapShade : ST.boldWrap);
+      sh.set(r, 1, col, s);
+      sh.set(r, 2, req ? 'yes' : '', s);
+      sh.set(r, 3, doc, s);
+      r++;
+    };
+    PROJECT.fields.forEach(function (f, i) { addRow(i ? '' : PROJECT.sheet, f.key, f.key === 'project_name', f.doc); });
+    TEMPLATES.forEach(function (t) {
+      if (t.isProject) return;
+      shade = !shade;
+      var head = t.sheet + (t.astm ? '\n' + t.astm : '');
+      if (t.notes) addRow(head, '', false, t.notes);
+      t.columns.forEach(function (c, i) {
+        addRow(i || t.notes ? '' : head, c.name, c.required,
+               c.doc + (c.choices ? ' Choices: ' + c.choices.join(', ') + '.' : ''));
+      });
+    });
+    return sh;
+  }
+
+  /** The template workbook as .xlsx bytes (blank, or with example rows). */
+  function writeWorkbook(examples) {
+    var sheets = [instructionsSheet(), projectSheet(examples)];
+    TEMPLATES.forEach(function (t) { if (!t.isProject) sheets.push(tableSheet(t, examples)); });
+    var boringsIndex = -1;
+    sheets.forEach(function (s, i) { if (s.name === TEMPLATE_BY_ID.borings.sheet) boringsIndex = i; });
+
+    var ct = [XML_HEAD, '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">',
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>',
+      '<Default Extension="xml" ContentType="application/xml"/>',
+      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>',
+      '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>',
+      '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>'];
+    var wbRels = [XML_HEAD, '<Relationships xmlns="' + NS_PKG_REL + '">'];
+    var wbSheets = [];
+    sheets.forEach(function (s, i) {
+      var n = i + 1;
+      ct.push('<Override PartName="/xl/worksheets/sheet' + n + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>');
+      wbRels.push('<Relationship Id="rId' + n + '" Type="' + NS_REL + '/worksheet" Target="worksheets/sheet' + n + '.xml"/>');
+      wbSheets.push('<sheet name="' + esc(s.name) + '" sheetId="' + n + '" r:id="rId' + n + '"/>');
+    });
+    ct.push('</Types>');
+    wbRels.push('<Relationship Id="rId' + (sheets.length + 1) + '" Type="' + NS_REL + '/styles" Target="styles.xml"/>');
+    wbRels.push('</Relationships>');
+    var borings = TEMPLATE_BY_ID.borings.sheet;
+    var workbook = XML_HEAD + '<workbook xmlns="' + NS_MAIN + '" xmlns:r="' + NS_REL + '">' +
+      '<bookViews><workbookView activeTab="0"/></bookViews>' +
+      '<sheets>' + wbSheets.join('') + '</sheets>' +
+      (boringsIndex >= 0 ? '<definedNames><definedName name="BoringIds">' +
+        esc("'" + borings.replace(/'/g, "''") + "'!$A$2:$A$" + WB_MAX_ROW) + '</definedName></definedNames>' : '') +
+      '</workbook>';
+    var core = XML_HEAD +
+      '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" ' +
+      'xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" ' +
+      'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' +
+      '<dc:title>Lab Results to DIGGS template</dc:title><dc:creator>Geosetta</dc:creator></cp:coreProperties>';
+    var entries = [
+      { name: '[Content_Types].xml', text: ct.join('') },
+      { name: '_rels/.rels', text: XML_HEAD + '<Relationships xmlns="' + NS_PKG_REL + '">' +
+        '<Relationship Id="rId1" Type="' + NS_REL + '/officeDocument" Target="xl/workbook.xml"/>' +
+        '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>' +
+        '</Relationships>' },
+      { name: 'docProps/core.xml', text: core },
+      { name: 'xl/workbook.xml', text: workbook },
+      { name: 'xl/_rels/workbook.xml.rels', text: wbRels.join('') },
+      { name: 'xl/styles.xml', text: STYLES_XML }
+    ];
+    sheets.forEach(function (s, i) {
+      entries.push({ name: 'xl/worksheets/sheet' + (i + 1) + '.xml', text: s.xml(i === 0) });
+    });
+    return makeZip(entries);
+  }
+
+  return {
+    TEMPLATES: TEMPLATES, TEMPLATE_BY_ID: TEMPLATE_BY_ID, KINDS: KINDS, SPECS: SPECS,
+    DENSITY_UNITS: DENSITY_UNITS, USCS_SYMBOLS: USCS_SYMBOLS,
+    parseCSV: parseCSV, toCSV: toCSV, templateCSV: templateCSV, detectTemplate: detectTemplate,
+    normHeader: normHeader, sieveSize: sieveSize, num: num, fmt: fmt, normDate: normDate,
+    dValue: dValue, passingAt: passingAt, finesSymbol: finesSymbol, uscs: uscs,
+    gradationSummary: gradationSummary, compactionSummary: compactionSummary,
+    buildDataset: buildDataset, generateDiggs: generateDiggs, summarize: summarize,
+    testName: testName, makeZip: makeZip, crc32: crc32, PROJECT: PROJECT,
+    fileRows: fileRows, projectSettings: projectSettings,
+    inflateRaw: Inflate, readZip: readZip, readWorkbook: readWorkbook, workbookEntries: workbookEntries,
+    parseSheetXml: parseSheetXml, parseSharedStrings: parseSharedStrings, writeWorkbook: writeWorkbook
+  };
+})();
+
+if (typeof module !== 'undefined' && module.exports) module.exports = LabDiggs;
+
+</script>
+<script>
+/* Lab Results -> DIGGS: page behaviour. Logic lives in core.js (LabDiggs). */
+(function () {
+  'use strict';
+  var L = LabDiggs;
+  var API = 'https://diggs.geosetta.org/api';
+  var TOOL_VERSION = '4f9e7b9f3b2a';
+  var SETTINGS_KEY = 'lab_diggs_builder_settings';
+  var DISMISS_KEY = 'lab_diggs_builder_dismissed_version';
+
+  var state = { files: [], borings: {}, xml: null, ds: null };
+  var $ = function (id) { return document.getElementById(id); };
+
+  function h(tag, attrs, children) {
+    var el = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      if (k === 'text') el.textContent = attrs[k];
+      else if (k === 'class') el.className = attrs[k];
+      else if (k.indexOf('on') === 0) el.addEventListener(k.slice(2), attrs[k]);
+      else if (attrs[k] !== null && attrs[k] !== undefined && attrs[k] !== false) el.setAttribute(k, attrs[k]);
+    });
+    (children || []).forEach(function (c) {
+      if (c == null) return;
+      el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    });
+    return el;
+  }
+
+  function download(name, data, type) {
+    var blob = data instanceof Blob ? data : new Blob([data], { type: type });
+    var url = URL.createObjectURL(blob);
+    var a = h('a', { href: url, download: name });
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 1000);
+  }
+
+  function store(key, value) { try { localStorage.setItem(key, value); } catch (e) { /* private mode */ } }
+  function recall(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+
+  // ------------------------------------------------------------------ templates
+  var XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+  function renderTemplates() {
+    var tbody = $('template-table').querySelector('tbody');
+    var sheetRows = [L.TEMPLATE_BY_ID.project].concat(L.TEMPLATES.filter(function (t) { return !t.isProject; }));
+    sheetRows.forEach(function (t) {
+      var cols = t.isProject
+        ? L.PROJECT.fields.map(function (f) { return f.key; }).join(', ')
+        : t.columns.map(function (c) { return c.name + (c.required ? '*' : ''); }).join(', ');
+      tbody.appendChild(h('tr', {}, [
+        h('td', {}, [t.sheet, t.optional && !t.isProject ? h('span', { class: 'tag', text: 'optional' }) : null]),
+        h('td', { text: t.astm }),
+        h('td', { class: 'cols', text: cols })
+      ]));
+    });
+
+    var help = h('div', { class: 'colhelp' });
+    help.appendChild(h('p', { text: 'In Excel, select a header or a cell to see its note. Header names are matched loosely, so "Boring", "Sample", "Depth", "LL" and "PL" are recognised too.' }));
+    help.appendChild(h('h4', { text: L.PROJECT.sheet }));
+    var pdl = h('dl');
+    L.PROJECT.fields.forEach(function (f) {
+      pdl.appendChild(h('dt', { text: f.key }));
+      pdl.appendChild(h('dd', { text: f.doc }));
+    });
+    help.appendChild(pdl);
+    L.TEMPLATES.forEach(function (t) {
+      if (t.isProject) return;
+      help.appendChild(h('h4', { text: t.sheet + (t.astm ? ' (' + t.astm + ')' : '') }));
+      if (t.notes) help.appendChild(h('p', { text: t.notes }));
+      var dl = h('dl');
+      t.columns.forEach(function (c) {
+        dl.appendChild(h('dt', { text: c.name + (c.required ? ' *' : '') }));
+        dl.appendChild(h('dd', { text: c.doc }));
+      });
+      help.appendChild(dl);
+    });
+    $('column-help').appendChild(help);
+
+    function workbook(examples) {
+      download(examples ? 'lab_results_to_diggs_example.xlsx' : 'lab_results_to_diggs_template.xlsx',
+               new Blob([L.writeWorkbook(examples)], { type: XLSX_TYPE }));
+    }
+    $('dl-workbook').addEventListener('click', function () { workbook(false); });
+    $('dl-workbook-example').addEventListener('click', function () { workbook(true); });
+
+    function zipAll(examples) {
+      var entries = L.TEMPLATES.map(function (t) { return { name: t.id + '.csv', text: L.templateCSV(t.id, examples) }; });
+      download(examples ? 'lab_diggs_csv_templates_examples.zip' : 'lab_diggs_csv_templates.zip',
+               new Blob([L.makeZip(entries)], { type: 'application/zip' }));
+    }
+    $('dl-all-templates').addEventListener('click', function () { zipAll(false); });
+    $('dl-all-examples').addEventListener('click', function () { zipAll(true); });
+
+    $('load-example').addEventListener('click', function () {
+      state.files = L.workbookEntries('example workbook', L.writeWorkbook(true));
+      state.borings = {};
+      applyProject(state.files);
+      renderFiles();
+      rebuild();
+    });
+  }
+
+  /** Fill the project form from any Project sheet / project.csv just loaded. */
+  function applyProject(entries) {
+    entries.forEach(function (f) {
+      var rows = L.fileRows(f);
+      if (!rows.length) return;
+      var id = f.template || L.detectTemplate(f.detectName || f.name, rows[0]);
+      if (id !== 'project') return;
+      var s = L.projectSettings(rows);
+      Object.keys(s).forEach(function (k) { if ($(k)) $(k).value = s[k]; });
+    });
+    saveSettings();
+  }
+
+  // ------------------------------------------------------------------ settings
+  var SETTING_IDS = ['projectName', 'projectNumber', 'client', 'labName', 'depthUnit', 'densityUnit'];
+
+  function settings() {
+    var s = { borings: state.borings, toolVersion: TOOL_VERSION.indexOf('__') === 0 ? '' : TOOL_VERSION };
+    SETTING_IDS.forEach(function (id) { s[id] = $(id).value.trim(); });
+    return s;
+  }
+
+  function saveSettings() {
+    var s = {};
+    SETTING_IDS.forEach(function (id) { s[id] = $(id).value; });
+    store(SETTINGS_KEY, JSON.stringify(s));
+  }
+
+  function initSettings() {
+    var sel = $('densityUnit');
+    Object.keys(L.DENSITY_UNITS).forEach(function (u) {
+      sel.appendChild(h('option', { value: u, text: L.DENSITY_UNITS[u] }));
+    });
+    try {
+      var saved = JSON.parse(recall(SETTINGS_KEY) || '{}');
+      SETTING_IDS.forEach(function (id) { if (saved[id] != null) $(id).value = saved[id]; });
+    } catch (e) { /* ignore */ }
+    SETTING_IDS.forEach(function (id) {
+      $(id).addEventListener('input', function () { saveSettings(); scheduleRebuild(); });
+      $(id).addEventListener('change', function () { saveSettings(); scheduleRebuild(); });
+    });
+  }
+
+  // ------------------------------------------------------------------ files
+  function readFiles(list) {
+    var pending = Array.prototype.slice.call(list);
+    var problems = [];
+    var jobs = pending.map(function (f) {
+      if (/\.(xls|ods|numbers)$/i.test(f.name)) {
+        problems.push(f.name + ': save it as an Excel .xlsx workbook first.');
+        return Promise.resolve(null);
+      }
+      var isWorkbook = /\.(xlsx|xlsm)$/i.test(f.name);
+      return new Promise(function (resolve) {
+        var r = new FileReader();
+        r.onload = function () {
+          if (!isWorkbook) { resolve([{ name: f.name, source: f.name, text: String(r.result), template: '' }]); return; }
+          try {
+            var entries = L.workbookEntries(f.name, new Uint8Array(r.result));
+            if (!entries.length) problems.push(f.name + ': no filled-in sheets were found.');
+            resolve(entries);
+          } catch (e) {
+            problems.push(f.name + ': ' + (e && e.message || e));
+            resolve(null);
+          }
+        };
+        r.onerror = function () { problems.push(f.name + ': the file could not be read.'); resolve(null); };
+        if (isWorkbook) r.readAsArrayBuffer(f); else r.readAsText(f);
+      });
+    });
+    Promise.all(jobs).then(function (loaded) {
+      var added = [];
+      loaded.forEach(function (entries) {
+        if (!entries) return;
+        // re-adding a file replaces everything that came from it
+        var src = entries.length ? entries[0].source : null;
+        state.files = state.files.filter(function (x) { return x.source !== src; });
+        entries.forEach(function (e) { state.files.push(e); added.push(e); });
+      });
+      if (added.length) applyProject(added);
+      state.loadProblems = problems;
+      renderFiles();
+      rebuild();
+    });
+  }
+
+  function renderFiles() {
+    var table = $('file-table'), tbody = table.querySelector('tbody');
+    tbody.textContent = '';
+    table.hidden = !state.files.length;
+    state.files.forEach(function (f, i) {
+      var rows = L.fileRows(f);
+      var detected = rows.length ? L.detectTemplate(f.detectName || f.name, rows[0]) : null;
+      var sel = h('select', { 'aria-label': 'Template for ' + f.name, onchange: function () {
+        f.template = sel.value; rebuild();
+      } }, [h('option', { value: '', text: detected ? 'Auto: ' + L.TEMPLATE_BY_ID[detected].title : 'Not recognised: choose' })]
+        .concat(L.TEMPLATES.map(function (t) { return h('option', { value: t.id, text: t.title }); })));
+      sel.value = f.template || '';
+      tbody.appendChild(h('tr', {}, [
+        h('td', { text: f.name }),
+        h('td', {}, [sel]),
+        h('td', { text: String(Math.max(rows.length - 1, 0)) }),
+        h('td', {}, [h('button', { type: 'button', class: 'linkbtn', text: 'Remove', 'aria-label': 'Remove ' + f.name,
+          onclick: function () { state.files.splice(i, 1); state.loadProblems = []; renderFiles(); rebuild(); } })])
+      ]));
+    });
+  }
+
+  function initDropzone() {
+    var dz = $('dropzone'), input = $('file-input');
+    dz.addEventListener('click', function () { input.click(); });
+    dz.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); }
+    });
+    input.addEventListener('change', function () { readFiles(input.files); input.value = ''; });
+    ['dragenter', 'dragover'].forEach(function (ev) {
+      dz.addEventListener(ev, function (e) { e.preventDefault(); dz.classList.add('over'); });
+    });
+    ['dragleave', 'drop'].forEach(function (ev) {
+      dz.addEventListener(ev, function (e) { e.preventDefault(); dz.classList.remove('over'); });
+    });
+    dz.addEventListener('drop', function (e) { if (e.dataTransfer) readFiles(e.dataTransfer.files); });
+    // a file dropped outside the zone should not navigate away from the page
+    window.addEventListener('dragover', function (e) { e.preventDefault(); });
+    window.addEventListener('drop', function (e) { e.preventDefault(); });
+  }
+
+  // ------------------------------------------------------------------ borings
+  var BORING_FIELDS = [['lat', 'e.g. 35.7802'], ['lon', 'e.g. -78.6401'], ['elev', ''], ['total', 'from samples'], ['date', 'YYYY-MM-DD']];
+
+  function renderBorings(ds) {
+    var section = $('step-borings'), tbody = $('boring-table').querySelector('tbody');
+    var ids = ds ? ds.boringOrder : [];
+    section.hidden = !ids.length;
+    // keep focus while typing: only rebuild rows when the boring list changes
+    var current = Array.prototype.map.call(tbody.rows, function (r) { return r.dataset.id; }).join('\u0000');
+    var unit = $('depthUnit').value;
+    var headCells = $('boring-table').querySelectorAll('th');
+    headCells[3].textContent = 'Ground elev. (' + unit + ')';
+    headCells[4].textContent = 'Total depth (' + unit + ')';
+    if (current !== ids.join('\u0000')) {
+      tbody.textContent = '';
+      ids.forEach(function (id) {
+        var tr = h('tr', {}, [h('td', { text: id })]);
+        tr.dataset.id = id;
+        BORING_FIELDS.forEach(function (f) {
+          var input = h('input', { type: 'text', inputmode: f[0] === 'date' ? 'text' : 'decimal',
+            placeholder: f[1], 'aria-label': id + ' ' + f[0] });
+          input.dataset.field = f[0];
+          input.addEventListener('input', function () {
+            var o = state.borings[id] = state.borings[id] || {};
+            o[f[0]] = input.value;
+            scheduleRebuild();
+          });
+          tr.appendChild(h('td', {}, [input]));
+        });
+        tbody.appendChild(tr);
+      });
+    }
+    Array.prototype.forEach.call(tbody.rows, function (tr) {
+      var b = ds.borings[tr.dataset.id];
+      var typed = state.borings[tr.dataset.id] || {};
+      Array.prototype.forEach.call(tr.querySelectorAll('input'), function (input) {
+        var k = input.dataset.field;
+        if (document.activeElement !== input && typed[k] === undefined) {
+          var v = b[k];
+          input.value = v == null ? '' : (typeof v === 'number' ? L.fmt(v) : v);
+          if (k === 'total' && b.totalComputed) { input.value = ''; input.placeholder = L.fmt(b.total) + ' (deepest sample)'; }
+        }
+        input.classList.toggle('missing', (k === 'lat' || k === 'lon') && b[k] == null);
+      });
+    });
+  }
+
+  // ------------------------------------------------------------------ build
+  var timer = null;
+  function scheduleRebuild() { clearTimeout(timer); timer = setTimeout(rebuild, 250); }
+
+  function msgBox(kind, title, items, limit) {
+    limit = limit || 200;
+    var ul = h('ul');
+    items.slice(0, limit).forEach(function (m) { ul.appendChild(h('li', { text: m })); });
+    if (items.length > limit) ul.appendChild(h('li', { text: '... and ' + (items.length - limit) + ' more' }));
+    return h('div', { class: 'msgbox ' + kind, role: kind === 'error' ? 'alert' : null },
+             [h('h3', { text: title }), items.length ? ul : null]);
+  }
+
+  function rebuild() {
+    var summary = $('summary'), messages = $('messages');
+    messages.textContent = '';
+    state.xml = null;
+    $('online-result').textContent = '';
+    if (!state.files.length) {
+      state.ds = null;
+      summary.textContent = '';
+      summary.appendChild(h('p', { class: 'muted', text: 'Add your filled-in workbook to begin.' }));
+      if ((state.loadProblems || []).length) {
+        messages.appendChild(msgBox('error', 'These files could not be used', state.loadProblems));
+      }
+      renderBorings(null);
+      setOutputs();
+      return;
+    }
+    var st = settings();
+    var ds;
+    try {
+      ds = L.buildDataset(state.files, st);
+    } catch (e) {
+      messages.appendChild(msgBox('error', 'Something went wrong reading the files', [String(e && e.message || e)]));
+      setOutputs();
+      return;
+    }
+    state.ds = ds;
+    renderFiles();
+    renderBorings(ds);
+    var errors = ds.errors.slice();
+    if (!st.projectName) errors.unshift('Enter a project name (step 2 or the Project sheet).');
+    if ((state.loadProblems || []).length) {
+      messages.appendChild(msgBox('error', 'These files were not used', state.loadProblems));
+    }
+
+    var s = L.summarize(ds);
+    summary.textContent = '';
+    summary.appendChild(h('div', { class: 'stats' }, [
+      h('div', { class: 'stat' }, [h('b', { text: String(s.borings) }), 'borings']),
+      h('div', { class: 'stat' }, [h('b', { text: String(s.samples) }), 'samples']),
+      h('div', { class: 'stat' }, [h('b', { text: String(s.tests) }), 'tests'])
+    ]));
+    var kinds = Object.keys(s.byKind).map(function (k) { return k + ': ' + s.byKind[k]; });
+    if (kinds.length) summary.appendChild(h('p', { class: 'kinds', text: kinds.join('  ·  ') }));
+
+    if (errors.length) messages.appendChild(msgBox('error', 'Fix these before the file can be built (' + errors.length + ')', errors));
+    if (ds.warnings.length) messages.appendChild(msgBox('warn', 'Warnings (' + ds.warnings.length + ')', ds.warnings));
+
+    if (!errors.length) {
+      try {
+        state.xml = L.generateDiggs(ds, st);
+        messages.insertBefore(msgBox('ok', 'DIGGS file ready: ' + (state.xml.length / 1024).toFixed(0) + ' KB', []),
+                              messages.firstChild);
+      } catch (e) {
+        messages.appendChild(msgBox('error', 'Could not build the file', [String(e && e.message || e)]));
+      }
+    }
+    setOutputs();
+  }
+
+  function setOutputs() {
+    var ready = !!state.xml;
+    $('dl-xml').disabled = !ready;
+    $('btn-validate').disabled = !ready;
+    $('btn-inspector').disabled = !ready;
+    $('preview-wrap').hidden = !ready;
+    var pre = $('preview');
+    if (ready) {
+      var lines = state.xml.split('\n');
+      pre.textContent = lines.slice(0, 400).join('\n') + (lines.length > 400 ? '\n... (' + (lines.length - 400) + ' more lines)' : '');
+    } else {
+      pre.textContent = '';
+    }
+  }
+
+  function outName() {
+    var n = ($('outName').value || 'lab_results_diggs').trim().replace(/\.xml$/i, '');
+    return (n.replace(/[^\w.\-]+/g, '_').slice(0, 100) || 'lab_results_diggs') + '.xml';
+  }
+
+  // ------------------------------------------------------------------ online
+  function xmlBlob() { return new Blob([state.xml], { type: 'application/xml' }); }
+
+  function busy(btn, on, label) {
+    if (on) { btn.dataset.label = btn.textContent; btn.textContent = label; btn.classList.add('busy'); btn.disabled = true; }
+    else { btn.textContent = btn.dataset.label || btn.textContent; btn.classList.remove('busy'); btn.disabled = !state.xml; }
+  }
+
+  function networkMessage(e) {
+    return 'Could not reach diggs.geosetta.org (' + (e && e.message || e) + '). Check your internet connection and try again.';
+  }
+
+  function reportMessages(xmlText) {
+    var out = [];
+    try {
+      var doc = new DOMParser().parseFromString(xmlText || '', 'application/xml');
+      Array.prototype.forEach.call(doc.getElementsByTagName('message'), function (m) {
+        var sev = (m.getElementsByTagName('severity')[0] || {}).textContent || '';
+        sev = sev.trim().toUpperCase();
+        if (sev !== 'ERROR' && sev !== 'WARNING') return;
+        var text = ((m.getElementsByTagName('text')[0] || {}).textContent || '').replace(/\s+/g, ' ').trim();
+        var path = ((m.getElementsByTagName('elementPath')[0] || {}).textContent || '').trim();
+        out.push({ sev: sev, text: text + (path ? '  [' + path + ']' : '') });
+      });
+    } catch (e) { /* ignore */ }
+    return out;
+  }
+
+  function validateOnline() {
+    var btn = $('btn-validate'), box = $('online-result');
+    box.textContent = '';
+    var fd = new FormData();
+    fd.append('file', xmlBlob(), outName());
+    busy(btn, true, 'Checking...');
+    fetch(API + '/diggs/validate?profile=cert', { method: 'POST', body: fd })
+      .then(function (r) {
+        return r.json().then(function (j) { return { ok: r.ok, status: r.status, body: j }; });
+      })
+      .then(function (res) {
+        if (!res.ok) {
+          box.appendChild(msgBox('error', 'The check failed (' + res.status + ')', [String(res.body && res.body.detail || '')]));
+          return;
+        }
+        var b = res.body;
+        var msgs = reportMessages(b.xml_report);
+        var errs = msgs.filter(function (m) { return m.sev === 'ERROR'; }).map(function (m) { return m.text; });
+        var warns = msgs.filter(function (m) { return m.sev === 'WARNING'; }).map(function (m) { return m.text; });
+        var cl = b.codelist || {};
+        var clErrs = (cl.errors || []).map(function (e) { return typeof e === 'string' ? e : (e.message || JSON.stringify(e)); });
+        if (b.valid) {
+          box.appendChild(msgBox('ok', 'Passed: schema, codelist and business-rule checks.', []));
+        } else {
+          box.appendChild(msgBox('error', 'The file did not pass every check', []));
+        }
+        if (b.validation_mode === 'xsd_only') {
+          box.appendChild(msgBox('warn', String(b.message || 'Large file: only the schema was checked.'), []));
+        }
+        if (clErrs.length) box.appendChild(msgBox('error', 'Codelist errors (' + clErrs.length + ')', clErrs));
+        if (errs.length) box.appendChild(msgBox('error', 'Schema / business-rule errors (' + errs.length + ')', errs));
+        if (warns.length) box.appendChild(msgBox('warn', 'Business-rule warnings (' + warns.length + ')', warns));
+      })
+      .catch(function (e) { box.appendChild(msgBox('error', networkMessage(e), [])); })
+      .then(function () { busy(btn, false); });
+  }
+
+  function buildInspector() {
+    var btn = $('btn-inspector'), box = $('online-result');
+    box.textContent = '';
+    var fd = new FormData();
+    fd.append('file', xmlBlob(), outName());
+    fd.append('tool', 'inspector');
+    busy(btn, true, 'Building...');
+    fetch(API + '/viewer/wrap', { method: 'POST', body: fd })
+      .then(function (r) {
+        if (!r.ok) {
+          return r.text().then(function (t) {
+            var detail = t;
+            try { detail = JSON.parse(t).detail || t; } catch (e) { /* not JSON */ }
+            throw new Error('(' + r.status + ') ' + detail);
+          });
+        }
+        return r.blob();
+      })
+      .then(function (blob) {
+        var name = outName().replace(/\.xml$/, '') + '_inspector.html';
+        download(name, blob, 'text/html');
+        box.appendChild(msgBox('ok', 'Downloaded ' + name + '. Open it in your browser; it works offline.', []));
+      })
+      .catch(function (e) {
+        var msg = /\(\d{3}\)/.test(String(e && e.message)) ? 'The inspector could not be built ' + e.message : networkMessage(e);
+        box.appendChild(msgBox('error', msg, []));
+      })
+      .then(function () { busy(btn, false); });
+  }
+
+  // ------------------------------------------------------------------ update check
+  function checkForUpdate() {
+    if (TOOL_VERSION.indexOf('__') === 0 || location.protocol === 'about:') return;
+    fetch(API + '/lab-diggs-builder/version', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d || !d.version || d.version === TOOL_VERSION) return;
+        if (recall(DISMISS_KEY) === d.version) return;
+        var banner = $('update-banner');
+        banner.hidden = false;
+        $('update-dismiss').addEventListener('click', function () {
+          banner.hidden = true;
+          store(DISMISS_KEY, d.version);
+        });
+      })
+      .catch(function () { /* offline: fine */ });
+  }
+
+  // ------------------------------------------------------------------ init
+  function init() {
+    if (TOOL_VERSION.indexOf('__') === 0) $('tool-version').textContent = 'development';
+    renderTemplates();
+    initSettings();
+    initDropzone();
+    $('dl-xml').addEventListener('click', function () {
+      if (state.xml) download(outName(), state.xml, 'application/xml');
+    });
+    $('btn-validate').addEventListener('click', validateOnline);
+    $('btn-inspector').addEventListener('click', buildInspector);
+    rebuild();
+    checkForUpdate();
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+
+</script>
+</body>
+</html>

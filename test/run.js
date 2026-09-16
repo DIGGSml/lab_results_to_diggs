@@ -1,0 +1,144 @@
+#!/usr/bin/env node
+/*
+ * Tests for src/core.js. No dependencies: node test/run.js
+ *
+ * Full DIGGS validation (XSD, codelists, business rules and the Lab Standard
+ * certification checks) runs in Geosetta's hosting repository, which has the
+ * validators; these tests cover the logic that does not need them.
+ */
+'use strict';
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const zlib = require('zlib');
+const L = require('../src/core.js');
+
+let failures = 0;
+function test(name, fn) {
+  try { fn(); console.log('  PASS  ' + name); }
+  catch (e) { failures++; console.log('  FAIL  ' + name + '\n        ' + (e && e.message)); }
+}
+
+console.log('sources');
+test('no raw control characters (HTML turns NUL into U+FFFD inside inline scripts)', () => {
+  for (const f of ['index.html', 'styles.css', 'core.js', 'ui.js', 'templates.json']) {
+    const text = fs.readFileSync(path.join(__dirname, '..', 'src', f), 'utf8');
+    assert.ok(!/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(text), f);
+  }
+});
+
+console.log('inflate');
+test('matches zlib for stored, fixed and dynamic blocks', () => {
+  const samples = [Buffer.alloc(0), Buffer.from('a'), Buffer.from('sheet '.repeat(5000)),
+    require('crypto').randomBytes(50000),
+    Buffer.from(Array.from({ length: 120000 }, (_, i) => '<c r=A1 t=s><v>0</v></c>'.charCodeAt((i * 7919) % 24)))];
+  for (const data of samples) {
+    for (const level of [0, 1, 6, 9]) {
+      assert.ok(Buffer.from(L.inflateRaw(zlib.deflateRawSync(data, { level }))).equals(data), 'level ' + level);
+    }
+  }
+});
+test('matches zlib for sync-flushed streams', () => {
+  const data = Buffer.from('abcdefghij'.repeat(20000));
+  const chunks = [];
+  for (let i = 0; i < data.length; i += 7000) {
+    chunks.push(zlib.deflateRawSync(data.subarray(i, i + 7000), { finishFlush: zlib.constants.Z_SYNC_FLUSH }));
+  }
+  // join independent sync-flushed pieces into one stream ending in an empty final stored block
+  const stream = Buffer.concat([...chunks, Buffer.from([0x03, 0x00])]);
+  assert.ok(Buffer.from(L.inflateRaw(stream)).equals(data));
+});
+
+console.log('workbook');
+const example = L.writeWorkbook(true);
+test('writes a ZIP with every expected part', () => {
+  const parts = L.readZip(example);
+  for (const p of ['[Content_Types].xml', '_rels/.rels', 'xl/workbook.xml', 'xl/_rels/workbook.xml.rels',
+                   'xl/styles.xml', 'xl/worksheets/sheet1.xml']) assert.ok(parts[p], p);
+  const wb = Buffer.from(parts['xl/workbook.xml']).toString();
+  assert.ok(wb.includes('<definedName name="BoringIds">'));
+});
+const entries = L.workbookEntries('example.xlsx', example);
+test('reads its own workbook back, sheet by sheet', () => {
+  const sheets = entries.map((e) => e.detectName);
+  assert.deepStrictEqual(sheets, ['project', 'borings', 'samples', 'water_content', 'atterberg_limits',
+    'wash_200', 'gradation', 'specific_gravity', 'unit_weight', 'organic_content', 'compaction', 'corrosion']);
+});
+const project = L.projectSettings(L.fileRows(entries[0]));
+test('Project sheet gives the settings', () => {
+  assert.strictEqual(project.projectName, 'Example laboratory program');
+  assert.strictEqual(project.depthUnit, 'ft');
+  assert.strictEqual(project.densityUnit, 'lbm/ft3');
+});
+test('blank workbook has no data sheets except the Project defaults', () => {
+  assert.deepStrictEqual(L.workbookEntries('b.xlsx', L.writeWorkbook(false)).map((e) => e.detectName), ['project']);
+});
+test('example workbook builds DIGGS with no errors or warnings', () => {
+  const ds = L.buildDataset(entries, Object.assign({ today: '2026-01-01' }, project));
+  assert.deepStrictEqual(ds.errors, []);
+  assert.deepStrictEqual(ds.warnings, []);
+  assert.strictEqual(L.summarize(ds).tests, 14);
+  const xml = L.generateDiggs(ds, project);
+  for (const s of ['<Diggs xmlns="http://diggsml.org/schemas/3"', '<SamplingActivity', '<Sample gml:id=',
+                   '<compactionTestType>Proctor</compactionTestType>', '<sedimentationData>',
+                   'ts=";"', '<referencePoint>']) assert.ok(xml.includes(s), s);
+});
+test('reads Excel-style parts: rich text, booleans, formulas, sparse cells', () => {
+  const shared = L.parseSharedStrings('<sst><si><r><t>ri</t></r><r><t xml:space="preserve">ch &amp; </t></r>' +
+    '<rPh><t>X</t></rPh></si><si><t>a_x000D_b</t></si></sst>');
+  assert.deepStrictEqual(shared, ['rich & ', 'a\rb']);
+  const rows = L.parseSheetXml('<worksheet><sheetData><row r="2"><c r="B2" t="s"><v>0</v></c>' +
+    '<c r="C2" t="b"><v>1</v></c><c r="D2" t="str"><f>A1</f><v>calc</v></c></row></sheetData></worksheet>', shared);
+  assert.deepStrictEqual(rows, [[], ['', 'rich & ', 'TRUE', 'calc']]);
+  assert.strictEqual(L.normDate('46174'), '2026-06-01');
+});
+
+console.log('csv');
+test('CSV templates with examples build without errors', () => {
+  const files = L.TEMPLATES.map((t) => ({ name: t.id + '.csv', text: L.templateCSV(t.id, true) }));
+  const ds = L.buildDataset(files, { projectName: 'x' });
+  assert.deepStrictEqual(ds.errors, []);
+});
+test('parses quotes, BOM, blank lines and semicolons', () => {
+  assert.deepStrictEqual(L.parseCSV('\uFEFFa,b\r\n"x, y","say ""hi"""\r\n\r\n'), [['a', 'b'], ['x, y', 'say "hi"']]);
+  assert.deepStrictEqual(L.parseCSV('a;b\n1,5;2'), [['a', 'b'], ['1,5', '2']]);
+});
+test('recognises files by name and by loose headers', () => {
+  assert.strictEqual(L.detectTemplate('Water Content', ['boring_id', 'sample_id', 'top_depth', 'water_content_pct']), 'water_content');
+  assert.strictEqual(L.detectTemplate('export.csv', ['Boring', 'Sample', 'Depth', 'LL', 'PL']), 'atterberg_limits');
+});
+test('reports bad input rows', () => {
+  const ds = L.buildDataset([{ name: 'water_content.csv', text:
+    'boring_id,sample_id,top_depth,bottom_depth,water_content_pct\nB-1,,1,2,10\nB-1,S-1,3,2,10\nB-1,S-2,1,2,wet\n' }], {});
+  const all = ds.errors.join(' | ');
+  for (const s of ['sample_id is blank', 'is above top_depth', '"wet" is not a number', 'No latitude/longitude']) {
+    assert.ok(all.includes(s), s);
+  }
+});
+
+console.log('derived values');
+test('Proctor vertex (parabola through the peak)', () => {
+  const t = [[11.8, 109.6], [13.9, 112.8], [15.8, 114.1], [17.9, 112.3], [20.1, 108.7]].map(([w, dd]) => ({ w, dd }));
+  assert.deepStrictEqual(L.compactionSummary(t), { omc: 15.7, mdd: 114.1 });
+});
+test('USCS per ASTM D2487', () => {
+  const cases = [
+    [{ gravel: 0, sand: 25.4, fines: 74.6 }, { ll: 32, pi: 13 }, 'CL', 'Lean clay with sand'],
+    [{ gravel: 10, sand: 82, fines: 8, cu: 7, cc: 1.5 }, { ll: 30, pi: 12 }, 'SW-SC', 'Well-graded sand with clay'],
+    [{ gravel: 60, sand: 32, fines: 8, cu: 2, cc: 0.8 }, { ll: 40, pi: 2 }, 'GP-GM', 'Poorly graded gravel with silt and sand'],
+    [{ gravel: 10, sand: 60, fines: 30 }, { ll: 25, pi: 6 }, 'SC-SM', 'Silty, clayey sand'],
+    [{ gravel: 5, sand: 20, fines: 75 }, { ll: 60, pi: 20 }, 'MH', 'Elastic silt with sand'],
+  ];
+  for (const [summary, plast, symbol, name] of cases) {
+    const u = L.uscs(summary, plast);
+    assert.strictEqual(u.symbol, symbol);
+    assert.strictEqual(u.name, name);
+  }
+  assert.ok(L.uscs({ gravel: 0, sand: 90, fines: 10 }, null).reason);
+});
+test('sieve designations', () => {
+  assert.deepStrictEqual([L.sieveSize('#200'), L.sieveSize('3/4"'), L.sieveSize('No 10')], [0.075, 19, 2]);
+});
+
+console.log(failures ? `\n${failures} FAILED` : '\nall passed');
+process.exit(failures ? 1 : 0);
