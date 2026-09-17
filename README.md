@@ -10,20 +10,40 @@ offline, with no installation and no server.
 
 ## How it works
 
+**Recommended: start from the project's DIGGS file.** Ask the engineer or
+driller for the project's DIGGS 3 file with the proposed or as-drilled
+borings.
+
 1. Open the HTML file in Chrome, Edge, Firefox or Safari.
-2. Download the Excel workbook from the page. It has a sheet for the project,
-   the borings, the samples and each test, with dropdowns and a note on every
-   column.
-3. Fill in the sheets for the tests you ran and save the workbook as `.xlsx`.
-4. Drop the workbook on the page. It checks the data, computes the derived
-   values and writes the DIGGS XML file on your computer.
+2. Drop the project's DIGGS file on the page, say whether its boring
+   locations are proposed or as drilled, and download the workbook prepared
+   for it. The workbook lists the file's borings and samples, with dropdowns
+   and a note on every column.
+3. Enter the results on the sheets for the tests you ran and save the
+   workbook as `.xlsx`.
+4. Drop the workbook on the page and download the DIGGS file with your
+   results added.
+
+The lab never types boring locations: they come from the DIGGS file. The
+original file is kept exactly as it was; the page only inserts new samples
+and tests that point at its boreholes, and notes in the file's audit trail
+who added them and whether the locations were proposed. Results are
+matched to the file's samples by sample name within the boring (or by an
+identical depth interval), and a sample that is not in the file is added at
+the depths given. Adding an updated workbook again replaces the earlier
+results, so a lab can re-run it at any time, including against the
+as-drilled file once it exists.
+
+**No DIGGS file?** Download the blank workbook instead, enter each
+boring's latitude and longitude (WGS84 decimal degrees) on the Borings
+sheet, and the page writes a new DIGGS file. Each sheet can also be supplied
+as a separate CSV file with the same header row.
 
 Nothing leaves your computer unless you press one of the two optional online
 buttons. *Check the file online* sends the XML to the
 [Geosetta DIGGS validator](https://diggs.geosetta.org) for schema, codelist and
 business-rule checks. *Build a DIGGS File Inspector page* wraps it in the
 [DIGGS File Inspector](https://github.com/DIGGSml/diggs_file_inspector).
-Each sheet can also be supplied as a separate CSV file with the same header row.
 
 ## Supported tests
 
@@ -41,11 +61,12 @@ Each sheet can also be supplied as a separate CSV file with the same header row.
 
 Every results row carries `boring_id`, `sample_id`, `top_depth`,
 `bottom_depth` and `sample_type`, so rows on different sheets that name the
-same boring and sample describe the same sample. Every boring needs a
-latitude and longitude (WGS84 decimal degrees) because DIGGS requires a
-location for each sampling feature. Ground elevation is strongly recommended;
-without it the file is still schema-valid, but the business-rule check reports
-one geometry error per boring.
+same boring and sample describe the same sample. When you start from a DIGGS
+file, depths may be left blank for samples that are already in it. Without a
+DIGGS file, every boring needs a latitude and longitude because DIGGS
+requires a location for each sampling feature; ground elevation is strongly
+recommended, since without it the business-rule check reports one geometry
+error per boring.
 
 ## DIGGS encoding
 
@@ -71,8 +92,12 @@ certification challenge:
   code.
 
 Values are written as entered, labelled with the units chosen on the Project
-sheet. Output from this tool passes Geosetta's full Lab Standard export
-certification (schema, codelists, business rules and data fidelity).
+sheet (or, when merging, with the depth unit of each borehole in the DIGGS
+file; a workbook that says otherwise is refused). Output from this tool,
+written new or merged into a field DIGGS file, passes Geosetta's full Lab
+Standard export certification (schema, codelists, business rules and data
+fidelity). Records added to an existing file have `gml:id`s starting with
+`LAB_`.
 
 ## Development
 
@@ -80,7 +105,8 @@ certification (schema, codelists, business rules and data fidelity).
 src/index.html      page shell
 src/styles.css      styles
 src/core.js         all logic, no DOM: CSV and .xlsx reading, the .xlsx
-                    template writer, derived values, DIGGS generation
+                    template writer, derived values, DIGGS generation,
+                    reading a DIGGS file and merging results into it
 src/ui.js           page behaviour
 src/templates.json  sheet and column definitions (one source for the
                     workbook writer, the reader and the column reference)

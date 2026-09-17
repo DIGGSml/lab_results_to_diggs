@@ -463,8 +463,10 @@ var LabDiggs = (function () {
     PROJECT.fields.forEach(function (f) { byKey[f.key] = f; byKey[normHeader(f.label)] = f; });
     byKey.lab = byKey.lab_name = byKey.laboratory;
     rows.slice(1).forEach(function (r) {
-      var f = byKey[normHeader(r[fi])];
+      var key = normHeader(r[fi]);
+      var f = byKey[key];
       var v = String(r[vi] == null ? '' : r[vi]).trim();
+      if (key === 'source_file' && v) { out.sourceFile = v; return; }
       if (!f || !v) return;
       if (f.key === 'depth_unit') {
         if (/^(m|meters?|metres?)$/i.test(v)) v = 'm';
@@ -496,16 +498,76 @@ var LabDiggs = (function () {
     function warn(msg) { ds.warnings.push(msg); }
     function err(msg) { ds.errors.push(msg); }
 
+    // Starting from a DIGGS file: borings and samples resolve against it
+    var src = settings.source || null;
+    ds.merge = !!src;
+    var featByName = {}, featByKey = {}, unknownBorings = {}, noted = {};
+    if (src) {
+      src.features.forEach(function (f) {
+        featByName[f.name] = f;
+        (featByKey[nameKey(f.name)] = featByKey[nameKey(f.name)] || []).push(f);
+      });
+    }
+    function canonicalBoring(id, where) {
+      if (!src) return id;
+      if (featByName[id]) return id;
+      var loose = featByKey[nameKey(id)] || [];
+      if (loose.length === 1) {
+        if (!noted['b:' + id]) {
+          warn(where + ': boring "' + id + '" was matched to "' + loose[0].name + '" in ' + src.fileName);
+          noted['b:' + id] = true;
+        }
+        return loose[0].name;
+      }
+      if (!unknownBorings[id]) unknownBorings[id] = where;
+      return id;
+    }
+
     function boring(id) {
       if (!ds.borings[id]) {
         ds.borings[id] = { id: id };
+        if (src && featByName[id]) ds.borings[id].feature = featByName[id];
         ds.boringOrder.push(id);
       }
       return ds.borings[id];
     }
 
+    function matchSourceSample(where, b, s, top, bottom) {
+      var feat = featByName[b];
+      if (!feat) return null;
+      var keepLab = settings.previousLab === 'keep';
+      var pool = src.samples.filter(function (c) { return c.boring === b && (keepLab || !c.lab); });
+      var near = function (x, y) { return x == null || y == null || Math.abs(x - y) <= 0.05; };
+      var byName = pool.filter(function (c) { return nameKey(c.name) === nameKey(s); });
+      if (byName.length > 1 && top != null) {
+        byName = byName.filter(function (c) { return near(c.top, top) && near(c.bottom, bottom); });
+      }
+      if (byName.length > 1) {
+        err(where + ': ' + src.fileName + ' has ' + byName.length + ' samples named "' + s + '" in ' + b +
+            '. Give top_depth and bottom_depth to pick one.');
+        return null;
+      }
+      if (byName.length === 1) {
+        var c = byName[0];
+        if (c.name !== s) warn(where + ': sample "' + s + '" in ' + b + ' was matched to sample "' + c.name + '" in ' + src.fileName);
+        return c;
+      }
+      if (top == null) return null;
+      var byDepth = pool.filter(function (c) {
+        return c.top != null && Math.abs(c.top - top) <= 0.05 &&
+               (bottom == null || c.bottom == null || Math.abs(c.bottom - bottom) <= 0.05);
+      });
+      if (byDepth.length === 1) {
+        warn(where + ': sample "' + s + '" in ' + b + ' has no sample of that name in ' + src.fileName +
+             ', so it was matched by depth to sample "' + byDepth[0].name + '" (' + fmt(byDepth[0].top) +
+             (byDepth[0].bottom != null ? '-' + fmt(byDepth[0].bottom) : '') + ')');
+        return byDepth[0];
+      }
+      return null;
+    }
+
     function sample(where, r) {
-      var b = r.boring_id, s = r.sample_id;
+      var b = canonicalBoring(r.boring_id, where), s = r.sample_id;
       var key = b + '\u0000' + s;
       var top = num(r.top_depth), bottom = num(r.bottom_depth);
       if (top != null && isNaN(top)) { err(where + ': top_depth "' + r.top_depth + '" is not a number'); top = null; }
@@ -519,6 +581,22 @@ var LabDiggs = (function () {
         smp = ds.samples[key] = { key: key, boring: b, id: s, top: top, bottom: bottom,
           type: (r.sample_type || '').trim(), tests: [] };
         ds.sampleOrder.push(key);
+        var match = src ? matchSourceSample(where, b, s, top, bottom) : null;
+        if (match) {
+          smp.sourceId = match.id;
+          smp.sourceName = match.name;
+          var off = function (x, y) { return x != null && y != null && Math.abs(x - y) > 0.05; };
+          if (off(top, match.top) || off(bottom, match.bottom)) {
+            warn(where + ': depths for ' + b + ' ' + s + ' (' + fmt(top) + (bottom != null ? '-' + fmt(bottom) : '') +
+                 ') differ from the sample in ' + src.fileName + ' (' + fmt(match.top) +
+                 (match.bottom != null ? '-' + fmt(match.bottom) : '') + '); the file\'s depths are used');
+          }
+          smp.top = match.top != null ? match.top : top;
+          smp.bottom = match.top != null ? match.bottom : bottom;
+          smp.fixed = true;
+        }
+      } else if (smp.fixed) {
+        if (!smp.type && r.sample_type) smp.type = r.sample_type.trim();
       } else {
         if (smp.top == null) smp.top = top;
         else if (top != null && Math.abs(top - smp.top) > 1e-6) {
@@ -601,6 +679,12 @@ var LabDiggs = (function () {
     // borings
     rowsOf('borings').forEach(function (r) {
       if (!r.boring_id) { err(r._where + ': boring_id is blank'); return; }
+      if (src) {
+        // locations come from the DIGGS file; the sheet only lists the borings
+        var canon = canonicalBoring(r.boring_id, r._where);
+        if (!featByName[canon]) return;
+        return;
+      }
       var b = boring(r.boring_id);
       if (b.fromFile) warn(r._where + ': boring ' + r.boring_id + ' listed twice; using the first row');
       if (b.fromFile) return;
@@ -620,7 +704,7 @@ var LabDiggs = (function () {
     });
 
     // Locations typed into the page override / complete borings.csv
-    var typed = settings.borings || {};
+    var typed = src ? {} : (settings.borings || {});
     Object.keys(typed).forEach(function (id) {
       var o = typed[id] || {};
       if (!ds.borings[id]) return;  // only borings that appear in the files
@@ -836,7 +920,11 @@ var LabDiggs = (function () {
     // samples must have a depth
     ds.sampleOrder.forEach(function (k) {
       var s = ds.samples[k];
-      if (s.top == null) err('Sample ' + s.boring + ' ' + s.id + ' has no top_depth in any file');
+      if (s.top == null) {
+        err('Sample ' + s.boring + ' ' + s.id + (src && featByName[s.boring]
+          ? ' is not in ' + src.fileName + '. Give its top_depth to add it as a new sample.'
+          : ' has no top_depth in any file'));
+      }
     });
 
     // duplicates of the same test on one sample
@@ -902,6 +990,66 @@ var LabDiggs = (function () {
       });
       if (o.date && normDate(o.date)) b.date = normDate(o.date);
     });
+    if (src) {
+      // samples already in the file that get no results add nothing
+      ds.sampleOrder = ds.sampleOrder.filter(function (k) {
+        var smp = ds.samples[k];
+        if (smp.sourceId && !smp.tests.length) { delete ds.samples[k]; return false; }
+        return true;
+      });
+      checkAgainstSource();
+      if (!ds.tests.length && !ds.errors.length) err('No test results found. Add the filled-in workbook.');
+      ds.depthUnit = depthUnit;
+      return ds;
+    }
+
+    function checkAgainstSource() {
+      var names = src.features.map(function (f) { return f.name; });
+      Object.keys(unknownBorings).forEach(function (id) {
+        err(unknownBorings[id] + ': boring "' + id + '" is not in ' + src.fileName + '. Borings in the file: ' +
+            (names.length > 12 ? names.slice(0, 12).join(', ') + ', ...' : names.join(', ')) + '.');
+      });
+      var wbUnit = settings.workbookDepthUnit;
+      ds.boringOrder.forEach(function (id) {
+        var f = featByName[id];
+        if (!f) return;
+        var used = ds.sampleOrder.some(function (k) { return ds.samples[k].boring === id && ds.samples[k].tests.length; }) ||
+                   ds.sampleOrder.some(function (k) { return ds.samples[k].boring === id && !ds.samples[k].sourceId; });
+        if (!used) return;
+        if (!f.lrs) err('Boring ' + id + ' in ' + src.fileName + ' has no linear referencing, so results cannot be placed along it.');
+        if (!f.unit) {
+          err('Boring ' + id + ' in ' + src.fileName + ' measures depth in "' + (f.unitText || '?') +
+              '", which this tool does not recognise (feet or meters).');
+        } else if (wbUnit && wbUnit !== f.unit) {
+          err('The workbook gives depths in ' + (wbUnit === 'm' ? 'meters' : 'feet') + ', but boring ' + id + ' in ' +
+              src.fileName + ' is measured in ' + (f.unit === 'm' ? 'meters' : 'feet') +
+              '. Enter depths in ' + (f.unit === 'm' ? 'meters' : 'feet') + ' and set depth_unit on the Project sheet to match.');
+        }
+        if (!f.located) warn('Boring ' + id + ' in ' + src.fileName + ' has no location; the file will not pass DIGGS validation until it has one.');
+        var total = f.total != null && (!f.totalUnit || f.totalUnit === f.unit) ? f.total : null;
+        ds.sampleOrder.forEach(function (k) {
+          var smp = ds.samples[k];
+          var deepest = smp.bottom != null ? smp.bottom : smp.top;
+          if (smp.boring === id && total != null && deepest != null && deepest > total + 1e-6) {
+            warn('Sample ' + id + ' ' + smp.id + ' (' + fmt(deepest) + ') is deeper than the total depth of the boring in ' +
+                 src.fileName + ' (' + fmt(total) + ')');
+          }
+        });
+      });
+      ds.sampleOrder.forEach(function (k) {
+        var smp = ds.samples[k];
+        if (!smp.sourceId) return;
+        smp.tests.forEach(function (t) {
+          var proc = KINDS[t.kind].proc;
+          var dup = src.tests.some(function (x) { return x.sample === smp.sourceId && x.proc === proc; });
+          if (dup) {
+            warn(src.fileName + ' already has a ' + testName(t.kind, t.data).toLowerCase() + ' test (' + proc + ') for ' +
+                 smp.boring + ' ' + (smp.sourceName || smp.id) + '; the new result is added as a separate test');
+          }
+        });
+      });
+    }
+
     var noXY = [], noZ = [];
     ds.boringOrder.forEach(function (id) {
       var b = ds.borings[id];
@@ -1118,17 +1266,122 @@ var LabDiggs = (function () {
     return out;
   }
 
-  /** Build the DIGGS 3.0 XML string for a dataset. */
-  function generateDiggs(ds, settings) {
-    var depthUnit = ds.depthUnit || 'ft';
-    var densityUnit = DENSITY_UNITS[settings.densityUnit] ? settings.densityUnit : 'lbm/ft3';
+  var NS_GML = 'http://www.opengis.net/gml/3.2';
+  var NS_XLINK = 'http://www.w3.org/1999/xlink';
+  var NS_GLR = 'http://www.opengis.net/gml/3.3/lr';
+  var LAB_PREFIX = 'LAB_';
+  var LAB_AUDIT_MARK = 'Laboratory results added by Lab Results to DIGGS';
+
+  function makeUid(reserved, prefix) {
     var used = {};
-    function uid(raw) {
-      var base = safeId(raw), id = base, i = 2;
+    Object.keys(reserved || {}).forEach(function (k) { used[k] = true; });
+    return function uid(raw) {
+      var base = safeId((prefix || '') + raw), id = base, i = 2;
       while (used[id]) id = base + '_' + (i++);
       used[id] = true;
       return id;
-    }
+    };
+  }
+
+  /**
+   * SamplingActivity/Sample/Test elements for a dataset.
+   * ctx: {uid, projectId, bh: {boring: {id, lrs}}, densityUnit}
+   * Samples matched to an existing Sample (s.sourceId) get no new records;
+   * their tests point at the existing one.
+   */
+  function labFragments(ds, ctx) {
+    var uid = ctx.uid, projectId = ctx.projectId, densityUnit = ctx.densityUnit;
+    var activities = [], samples = [], measurements = [];
+    ds.sampleOrder.forEach(function (k) {
+      var s = ds.samples[k];
+      if (s.top == null) return;
+      var b = ctx.bh[s.boring];
+      if (!b) return;
+      var smpId = s.sourceId;
+      if (!smpId) {
+        var saId = uid('SA_' + s.boring + '_' + s.id), spId = uid('SP_' + s.boring + '_' + s.id);
+        smpId = uid('SMP_' + s.boring + '_' + s.id);
+        var isPoint = s.bottom == null || Math.abs(s.bottom - s.top) < 1e-9;
+        var loc = function (idBase) {
+          if (idBase.indexOf(LAB_PREFIX) === 0) idBase = idBase.slice(LAB_PREFIX.length);
+          return isPoint
+            ? E('PointLocation', { 'gml:id': uid('PL_' + idBase), srsDimension: '1', srsName: '#' + b.lrs },
+                E('gml:pos', {}, fmt(s.top)))
+            : E('LinearExtent', { 'gml:id': uid('LE_' + idBase), srsDimension: '1', srsName: '#' + b.lrs },
+                E('gml:posList', {}, fmt(s.top) + ' ' + fmt(s.bottom)));
+        };
+        activities.push(E('samplingActivity', {}, E('SamplingActivity', { 'gml:id': saId }, [
+          E('gml:name', {}, 'Sampling of ' + s.boring + ' ' + s.id + (s.type ? ' (' + s.type + ')' : '')),
+          E('investigationTarget', {}, 'Natural Ground'),
+          E('projectRef', { 'xlink:href': '#' + projectId }),
+          E('samplingFeatureRef', { 'xlink:href': '#' + b.id }),
+          E('samplingLocation', {}, loc(saId)),
+          E('activityType', {}, 'collect'),
+          // Sample requires a sampleProducedRef to this record
+          E('sampleProduced', {}, E('SampleProduced', { 'gml:id': spId }, E('location', {}, loc(spId))))
+        ])));
+        samples.push(E('sample', {}, E('Sample', { 'gml:id': smpId }, [
+          E('gml:name', {}, s.id),
+          E('projectRef', { 'xlink:href': '#' + projectId }),
+          E('samplingActivityRef', { 'xlink:href': '#' + saId }),
+          E('sampleProducedRef', { 'xlink:href': '#' + spId }),
+          E('classification', {}, 'Soil')
+        ])));
+      }
+
+      s.tests.forEach(function (t) {
+        var d = t.data;
+        var rows = results(t.kind, d, densityUnit);
+        if (!rows.length) return;
+        var tid = uid('T_' + s.boring + '_' + s.id + '_' + t.kind);
+        // child ids derive from the test id; drop the merge prefix so it is not repeated
+        var tkey = tid.indexOf(LAB_PREFIX) === 0 ? tid.slice(LAB_PREFIX.length) : tid;
+        var props = rows.map(function (r, i) {
+          return E('Property', { index: String(i + 1), 'gml:id': uid('P_' + tkey + '_' + (i + 1)) }, [
+            E('propertyName', {}, r.name),
+            E('typeData', {}, r.type),
+            E('propertyClass', { codeSpace: PROPS + '#' + r.code }, r.code),
+            r.uom ? E('uom', {}, r.uom) : null
+          ]);
+        });
+        var specs = specList(t.kind, d).map(function (a, i) {
+          return E('testProcedureMethod', {}, E('Specification', { 'gml:id': uid('SPEC_' + tkey + '_' + (i + 1)) }, [
+            E('accredtingBody', {}, 'ASTM'), // (sic) schema spelling
+            E('standardReferenceNumber', {}, a),
+            E('standardTitle', {}, SPECS[a])
+          ]));
+        });
+        measurements.push(E('measurement', {}, E('Test', { 'gml:id': tid }, [
+          E('gml:name', {}, testName(t.kind, d) + ' — ' + s.boring + ' ' + (s.sourceName || s.id)),
+          E('investigationTarget', {}, 'Natural Ground'),
+          E('projectRef', { 'xlink:href': '#' + projectId }),
+          E('samplingFeatureRef', { 'xlink:href': '#' + b.id }),
+          E('sampleRef', { 'xlink:href': '#' + smpId }),
+          E('outcome', {}, E('TestResult', { 'gml:id': uid('TR_' + tkey) }, [
+            E('location', {}, E('PointLocation', { 'gml:id': uid('PL_' + tkey), srsDimension: '1', srsName: '#' + b.lrs },
+              E('gml:pos', {}, fmt(s.top)))),
+            E('results', {}, E('ResultSet', {}, [
+              E('parameters', {}, E('PropertyParameters', { 'gml:id': uid('PP_' + tkey) }, E('properties', {}, props))),
+              // ";" between tuples: text results (USCS group names) contain spaces
+              E('dataValues', { cs: ',', ts: ';', decimal: '.' }, rows.map(fmtValue).join(','))
+            ]))
+          ])),
+          E('procedure', {}, E(KINDS[t.kind].proc, { 'gml:id': uid('PR_' + tkey) },
+            specs.concat(procedureDetails(t.kind, d, tkey, uid, densityUnit))))
+        ])));
+      });
+    });
+    return { activities: activities, samples: samples, measurements: measurements };
+  }
+
+  function densityUnitOf(settings) {
+    return DENSITY_UNITS[settings.densityUnit] ? settings.densityUnit : 'lbm/ft3';
+  }
+
+  /** Build a complete DIGGS 3.0 file for a dataset (no starting DIGGS file). */
+  function generateDiggs(ds, settings) {
+    var depthUnit = ds.depthUnit || 'ft';
+    var uid = makeUid();
     var today = settings.today || new Date().toISOString().slice(0, 10);
     var projectId = uid('Project_1');
     var root = [];
@@ -1197,86 +1450,13 @@ var LabDiggs = (function () {
       root.push(E('samplingFeature', {}, E('Borehole', { 'gml:id': bhId }, kids)));
     });
 
-    var activities = [], samples = [], measurements = [];
-    ds.sampleOrder.forEach(function (k) {
-      var s = ds.samples[k];
-      if (s.top == null) return;
-      var b = bh[s.boring];
-      var saId = uid('SA_' + s.boring + '_' + s.id), smpId = uid('SMP_' + s.boring + '_' + s.id),
-          spId = uid('SP_' + s.boring + '_' + s.id);
-      var isPoint = s.bottom == null || Math.abs(s.bottom - s.top) < 1e-9;
-      var loc = function (idBase) {
-        return isPoint
-          ? E('PointLocation', { 'gml:id': uid('PL_' + idBase), srsDimension: '1', srsName: '#' + b.lrs },
-              E('gml:pos', {}, fmt(s.top)))
-          : E('LinearExtent', { 'gml:id': uid('LE_' + idBase), srsDimension: '1', srsName: '#' + b.lrs },
-              E('gml:posList', {}, fmt(s.top) + ' ' + fmt(s.bottom)));
-      };
-      activities.push(E('samplingActivity', {}, E('SamplingActivity', { 'gml:id': saId }, [
-        E('gml:name', {}, 'Sampling of ' + s.boring + ' ' + s.id + (s.type ? ' (' + s.type + ')' : '')),
-        E('investigationTarget', {}, 'Natural Ground'),
-        E('projectRef', { 'xlink:href': '#' + projectId }),
-        E('samplingFeatureRef', { 'xlink:href': '#' + b.id }),
-        E('samplingLocation', {}, loc(saId)),
-        E('activityType', {}, 'collect'),
-        // Sample requires a sampleProducedRef to this record
-        E('sampleProduced', {}, E('SampleProduced', { 'gml:id': spId }, E('location', {}, loc(spId))))
-      ])));
-      samples.push(E('sample', {}, E('Sample', { 'gml:id': smpId }, [
-        E('gml:name', {}, s.id),
-        E('projectRef', { 'xlink:href': '#' + projectId }),
-        E('samplingActivityRef', { 'xlink:href': '#' + saId }),
-        E('sampleProducedRef', { 'xlink:href': '#' + spId }),
-        E('classification', {}, 'Soil')
-      ])));
-
-      s.tests.forEach(function (t) {
-        var d = t.data;
-        var rows = results(t.kind, d, densityUnit);
-        if (!rows.length) return;
-        var tid = uid('T_' + s.boring + '_' + s.id + '_' + t.kind);
-        var props = rows.map(function (r, i) {
-          return E('Property', { index: String(i + 1), 'gml:id': uid('P_' + tid + '_' + (i + 1)) }, [
-            E('propertyName', {}, r.name),
-            E('typeData', {}, r.type),
-            E('propertyClass', { codeSpace: PROPS + '#' + r.code }, r.code),
-            r.uom ? E('uom', {}, r.uom) : null
-          ]);
-        });
-        var specs = specList(t.kind, d).map(function (a, i) {
-          return E('testProcedureMethod', {}, E('Specification', { 'gml:id': uid('SPEC_' + tid + '_' + (i + 1)) }, [
-            E('accredtingBody', {}, 'ASTM'), // (sic) schema spelling
-            E('standardReferenceNumber', {}, a),
-            E('standardTitle', {}, SPECS[a])
-          ]));
-        });
-        measurements.push(E('measurement', {}, E('Test', { 'gml:id': tid }, [
-          E('gml:name', {}, testName(t.kind, d) + ' — ' + s.boring + ' ' + s.id),
-          E('investigationTarget', {}, 'Natural Ground'),
-          E('projectRef', { 'xlink:href': '#' + projectId }),
-          E('samplingFeatureRef', { 'xlink:href': '#' + b.id }),
-          E('sampleRef', { 'xlink:href': '#' + smpId }),
-          E('outcome', {}, E('TestResult', { 'gml:id': uid('TR_' + tid) }, [
-            E('location', {}, E('PointLocation', { 'gml:id': uid('PL_' + tid), srsDimension: '1', srsName: '#' + b.lrs },
-              E('gml:pos', {}, fmt(s.top)))),
-            E('results', {}, E('ResultSet', {}, [
-              E('parameters', {}, E('PropertyParameters', { 'gml:id': uid('PP_' + tid) }, E('properties', {}, props))),
-              // ";" between tuples: text results (USCS group names) contain spaces
-              E('dataValues', { cs: ',', ts: ';', decimal: '.' }, rows.map(fmtValue).join(','))
-            ]))
-          ])),
-          E('procedure', {}, E(KINDS[t.kind].proc, { 'gml:id': uid('PR_' + tid) },
-            specs.concat(procedureDetails(t.kind, d, tid, uid, densityUnit))))
-        ])));
-      });
-    });
-
-    root = root.concat(activities, samples, measurements);
+    var frag = labFragments(ds, { uid: uid, projectId: projectId, bh: bh, densityUnit: densityUnitOf(settings) });
+    root = root.concat(frag.activities, frag.samples, frag.measurements);
     var doc = E('Diggs', {
       xmlns: NS_DIGGS,
-      'xmlns:glr': 'http://www.opengis.net/gml/3.3/lr',
-      'xmlns:gml': 'http://www.opengis.net/gml/3.2',
-      'xmlns:xlink': 'http://www.w3.org/1999/xlink',
+      'xmlns:glr': NS_GLR,
+      'xmlns:gml': NS_GML,
+      'xmlns:xlink': NS_XLINK,
       'xmlns:xsi': 'http://www.w3.org/2001/XMLSchema-instance',
       'xsi:schemaLocation': NS_DIGGS + ' https://diggsml.org/schema-dev/Diggs.xsd',
       'gml:id': 'Lab_Results'
@@ -1284,6 +1464,430 @@ var LabDiggs = (function () {
     var out = ['<?xml version="1.0" encoding="UTF-8"?>'];
     serialize(doc, 0, out);
     return out.join('\n') + '\n';
+  }
+
+  // ---------------------------------------------------------------------
+  // Reading an existing DIGGS file and merging lab results into it
+  // ---------------------------------------------------------------------
+
+  function decodeEntities(s) {
+    return String(s).replace(/&(lt|gt|amp|quot|apos|#\d+|#x[0-9a-fA-F]+);/g, function (m, e) {
+      if (e === 'lt') return '<';
+      if (e === 'gt') return '>';
+      if (e === 'amp') return '&';
+      if (e === 'quot') return '"';
+      if (e === 'apos') return "'";
+      return String.fromCodePoint(e.charAt(1) === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10));
+    });
+  }
+
+  function lineOf(text, pos) { return text.slice(0, pos).split('\n').length; }
+
+  /**
+   * A small namespace-aware XML parser that keeps source offsets, so a
+   * merge can insert text without re-serialising (and so without changing)
+   * the original file. Elements: {local, ns, attrs: [{local, ns, value}],
+   * children, text, start, end, contentStart, contentEnd, parent}.
+   * DTDs are refused.
+   */
+  function parseXml(text) {
+    var n = text.length, i = 0, stack = [], root = null;
+    var nameRe = /<([^\s\/>]+)/y;
+    var attrRe = /\s*([^\s=\/>]+)\s*=\s*("[^"]*"|'[^']*')/y;
+    var endRe = /\s*(\/?)>/y;
+    function fail(msg, at) { throw new Error(msg + ' (line ' + lineOf(text, at) + ')'); }
+    function resolve(prefix, nsmap, isAttr) {
+      if (prefix === 'xml') return 'http://www.w3.org/XML/1998/namespace';
+      if (!prefix) return isAttr ? '' : (nsmap[''] || '');
+      if (!(prefix in nsmap)) fail('undeclared namespace prefix "' + prefix + '"', i);
+      return nsmap[prefix];
+    }
+    if (text.charCodeAt(0) === 0xFEFF) i = 1;
+    while (i < n) {
+      var lt = text.indexOf('<', i);
+      if (lt < 0) lt = n;
+      if (lt > i) {
+        if (stack.length) stack[stack.length - 1].text += decodeEntities(text.slice(i, lt));
+        else if (text.slice(i, lt).trim()) fail('text outside the root element', i);
+        i = lt;
+        if (i >= n) break;
+      }
+      if (text.startsWith('<?', i)) {
+        var pe = text.indexOf('?>', i);
+        if (pe < 0) fail('unterminated processing instruction', i);
+        i = pe + 2;
+      } else if (text.startsWith('<!--', i)) {
+        var ce = text.indexOf('-->', i + 4);
+        if (ce < 0) fail('unterminated comment', i);
+        i = ce + 3;
+      } else if (text.startsWith('<![CDATA[', i)) {
+        var de = text.indexOf(']]>', i);
+        if (de < 0 || !stack.length) fail('bad CDATA section', i);
+        stack[stack.length - 1].text += text.slice(i + 9, de);
+        i = de + 3;
+      } else if (text.startsWith('<!', i)) {
+        fail('files with a DOCTYPE are not supported', i);
+      } else if (text.startsWith('</', i)) {
+        var ge = text.indexOf('>', i);
+        if (ge < 0) fail('unterminated end tag', i);
+        var qn = text.slice(i + 2, ge).trim();
+        var open = stack.pop();
+        if (!open || open.qname !== qn) fail('mismatched end tag </' + qn + '>', i);
+        open.contentEnd = i;
+        open.end = ge + 1;
+        i = ge + 1;
+      } else {
+        nameRe.lastIndex = i;
+        var m = nameRe.exec(text);
+        if (!m) fail('malformed tag', i);
+        var el = { qname: m[1], attrs: [], children: [], text: '', start: i,
+                   parent: stack.length ? stack[stack.length - 1] : null };
+        var p = nameRe.lastIndex, rawAttrs = [];
+        for (;;) {
+          attrRe.lastIndex = p;
+          var am = attrRe.exec(text);
+          if (!am) break;
+          rawAttrs.push([am[1], decodeEntities(am[2].slice(1, -1))]);
+          p = attrRe.lastIndex;
+        }
+        endRe.lastIndex = p;
+        var em = endRe.exec(text);
+        if (!em) fail('malformed start tag <' + m[1] + '>', i);
+        var nsmap = Object.create(el.parent ? el.parent.nsmap : null);
+        rawAttrs.forEach(function (a) {
+          if (a[0] === 'xmlns') nsmap[''] = a[1];
+          else if (a[0].indexOf('xmlns:') === 0) nsmap[a[0].slice(6)] = a[1];
+        });
+        el.nsmap = nsmap;
+        var colon = m[1].indexOf(':');
+        el.local = colon < 0 ? m[1] : m[1].slice(colon + 1);
+        el.ns = resolve(colon < 0 ? '' : m[1].slice(0, colon), nsmap, false);
+        rawAttrs.forEach(function (a) {
+          if (a[0] === 'xmlns' || a[0].indexOf('xmlns:') === 0) return;
+          var c = a[0].indexOf(':');
+          el.attrs.push({ local: c < 0 ? a[0] : a[0].slice(c + 1),
+                          ns: resolve(c < 0 ? '' : a[0].slice(0, c), nsmap, true), value: a[1] });
+        });
+        if (el.parent) el.parent.children.push(el);
+        else if (root) fail('more than one root element', i);
+        else root = el;
+        i = endRe.lastIndex;
+        el.contentStart = i;
+        if (em[1]) { el.contentEnd = el.start; el.end = i; el.selfClosing = true; }
+        else stack.push(el);
+      }
+    }
+    if (stack.length) fail('unclosed element <' + stack[stack.length - 1].qname + '>', n);
+    if (!root) throw new Error('no XML element found');
+    return root;
+  }
+
+  function kids(el, ns, local) {
+    return el ? el.children.filter(function (c) { return c.ns === ns && (!local || c.local === local); }) : [];
+  }
+  function kid(el, ns, local) { return kids(el, ns, local)[0] || null; }
+  function firstElement(el) { return el && el.children.length ? el.children[0] : null; }
+  function attrOf(el, ns, local) {
+    if (!el) return null;
+    for (var i = 0; i < el.attrs.length; i++) {
+      if (el.attrs[i].ns === ns && el.attrs[i].local === local) return el.attrs[i].value;
+    }
+    return null;
+  }
+  function textOf(el) { return el ? el.text.trim() : ''; }
+  function hrefId(el) {
+    var h = attrOf(el, NS_XLINK, 'href');
+    return h ? h.replace(/^.*#/, '') : null;
+  }
+  function descend(el, ns, local, out) {
+    out = out || [];
+    if (!el) return out;
+    el.children.forEach(function (c) {
+      if (c.ns === ns && c.local === local) out.push(c);
+      descend(c, ns, local, out);
+    });
+    return out;
+  }
+  function numbers(s) {
+    return String(s || '').trim().split(/\s+/).filter(Boolean).map(Number);
+  }
+  function depthUnitCode(u) {
+    u = String(u || '').trim().toLowerCase();
+    if (/^(ft|foot|feet|us-ft|ft\[us\])$/.test(u)) return 'ft';
+    if (/^(m|meter|meters|metre|metres)$/.test(u)) return 'm';
+    return null;
+  }
+
+  var FEATURE_KINDS = { Borehole: 'boring', TrialPit: 'test pit' };
+
+  /** Everything the merge needs to know about a DIGGS 3 file. */
+  function readDiggs(text, fileName) {
+    text = String(text);
+    var root;
+    try { root = parseXml(text); } catch (e) { throw new Error('not a readable XML file: ' + e.message); }
+    if (root.local !== 'Diggs') throw new Error('this XML file is not a DIGGS file (its root element is <' + root.local + '>)');
+    if (root.ns !== NS_DIGGS) {
+      throw new Error('this is not a DIGGS 3 file (namespace "' + root.ns + '"). Convert it to DIGGS 3 first.');
+    }
+    var D = NS_DIGGS;
+    var info = { fileName: fileName || 'DIGGS file', text: text, root: root, ids: {}, features: [],
+                 featureById: {}, samples: [], sampleById: {}, tests: [], labBlocks: [], labTests: 0,
+                 labAudits: [], unusable: [] };
+    (function walk(el) {
+      var id = attrOf(el, NS_GML, 'id');
+      if (id) info.ids[id] = true;
+      el.children.forEach(walk);
+    })(root);
+
+    var project = firstElement(kid(root, D, 'project'));
+    if (!project) throw new Error('the DIGGS file has no project, so results cannot be linked to it');
+    info.projectId = attrOf(project, NS_GML, 'id');
+    info.projectName = textOf(kid(project, NS_GML, 'name'));
+    info.docInfo = firstElement(kid(root, D, 'documentInformation'));
+
+    kids(root, D, 'samplingFeature').forEach(function (wrap) {
+      var f = firstElement(wrap);
+      if (!f || f.ns !== D) return;
+      var name = textOf(kid(f, NS_GML, 'name'));
+      if (!FEATURE_KINDS[f.local]) { if (name) info.unusable.push(name + ' (' + f.local + ')'); return; }
+      var feat = { name: name, id: attrOf(f, NS_GML, 'id'), kind: FEATURE_KINDS[f.local], element: f.local };
+      var lrs = descend(kid(f, D, 'linearReferencing'), D, 'LinearSpatialReferenceSystem')[0];
+      feat.lrs = lrs ? attrOf(lrs, NS_GML, 'id') : null;
+      var units = descend(lrs, NS_GLR, 'units')[0];
+      feat.unitText = textOf(units);
+      feat.unit = depthUnitCode(feat.unitText);
+      var pl = firstElement(kid(f, D, 'referencePoint'));
+      if (pl) {
+        var posEl = kid(pl, NS_GML, 'pos');
+        // srsName may sit on the geometry or on gml:pos itself
+        var srs = attrOf(pl, '', 'srsName') || attrOf(posEl, '', 'srsName') || '';
+        var pos = numbers(textOf(posEl));
+        feat.crs = srs;
+        // EPSG:4326 (alone or as the horizontal part of a compound CRS) is latitude, longitude
+        if (/4326/.test(srs) && pos.length >= 2) {
+          feat.lat = pos[0]; feat.lon = pos[1];
+          if (pos.length >= 3) feat.elev = pos[2];
+        }
+        feat.located = pos.length >= 2;
+      }
+      var tmd = kid(f, D, 'totalMeasuredDepth');
+      if (tmd) {
+        feat.total = num(textOf(tmd));
+        feat.totalUnit = depthUnitCode(attrOf(tmd, '', 'uom'));
+      }
+      var when = kid(f, D, 'whenConstructed');
+      if (when) {
+        var st = descend(when, D, 'start')[0] || descend(when, NS_GML, 'beginPosition')[0] ||
+                 descend(when, NS_GML, 'timePosition')[0];
+        feat.date = st ? textOf(st).slice(0, 10) : '';
+        feat.constructed = true;
+      }
+      if (feat.id && feat.name) { info.features.push(feat); info.featureById[feat.id] = feat; }
+    });
+
+    var activityById = {};
+    kids(root, D, 'samplingActivity').forEach(function (wrap) {
+      var a = firstElement(wrap);
+      if (!a) return;
+      var locEl = firstElement(kid(a, D, 'samplingLocation'));
+      var vals = [];
+      if (locEl) {
+        vals = numbers(textOf(kid(locEl, NS_GML, 'posList')) || textOf(kid(locEl, NS_GML, 'pos')));
+      }
+      activityById[attrOf(a, NS_GML, 'id')] = {
+        feature: hrefId(kid(a, D, 'samplingFeatureRef')),
+        top: vals.length ? vals[0] : null,
+        bottom: vals.length > 1 ? vals[vals.length - 1] : null
+      };
+    });
+
+    kids(root, D, 'sample').forEach(function (wrap) {
+      var smp = firstElement(wrap);
+      if (!smp || smp.local !== 'Sample') return;
+      var act = activityById[hrefId(kid(smp, D, 'samplingActivityRef'))];
+      var feat = act ? info.featureById[act.feature] : null;
+      if (!feat) return;
+      var rec = { id: attrOf(smp, NS_GML, 'id'), name: textOf(kid(smp, NS_GML, 'name')), boring: feat.name,
+                  top: act.top, bottom: act.bottom };
+      rec.lab = rec.id.indexOf(LAB_PREFIX) === 0;  // added by an earlier run of this tool
+      info.samples.push(rec);
+      info.sampleById[rec.id] = rec;
+    });
+
+    root.children.forEach(function (wrap) {
+      var inner = firstElement(wrap);
+      var id = attrOf(inner, NS_GML, 'id') || '';
+      if (id.indexOf(LAB_PREFIX) === 0) {
+        info.labBlocks.push(wrap);
+        if (wrap.local === 'measurement') info.labTests++;
+        return;
+      }
+      if (wrap.ns === D && wrap.local === 'measurement' && inner) {
+        var proc = firstElement(kid(inner, D, 'procedure'));
+        var refs = descend(inner, D, 'sampleRef').map(hrefId);
+        refs.forEach(function (r) { info.tests.push({ sample: r, proc: proc ? proc.local : '' }); });
+      }
+    });
+    kids(info.docInfo, D, 'auditTrail').forEach(function (at) {
+      var content = descend(at, D, 'content')[0];
+      if (content && textOf(content).indexOf(LAB_AUDIT_MARK) === 0) info.labAudits.push(at);
+    });
+
+    var units = {};
+    info.features.forEach(function (f) { if (f.unit) units[f.unit] = true; });
+    info.depthUnit = Object.keys(units).length === 1 ? Object.keys(units)[0] : null;
+    info.allConstructed = info.features.length > 0 && info.features.every(function (f) { return f.constructed; });
+    return info;
+  }
+
+  /** Short description of a loaded DIGGS file for the page. */
+  function describeSource(info) {
+    var located = info.features.filter(function (f) { return f.located; }).length;
+    return { project: info.projectName, borings: info.features.length, located: located,
+             samples: info.samples.filter(function (s) { return !s.lab; }).length, labTests: info.labTests, depthUnit: info.depthUnit,
+             allConstructed: info.allConstructed, unusable: info.unusable,
+             names: info.features.map(function (f) { return f.name; }) };
+  }
+
+  /** Borings and Samples sheet rows for a workbook prepared from a DIGGS file. */
+  function sourceSeed(info) {
+    var unitWord = { ft: 'feet', m: 'meters' };
+    return {
+      sourceFile: info.fileName,
+      projectName: info.projectName,
+      depthUnit: unitWord[info.depthUnit] || '',
+      borings: info.features.map(function (f) {
+        return [f.name, f.lat != null ? fmt(f.lat) : '', f.lon != null ? fmt(f.lon) : '',
+                f.elev != null ? fmt(f.elev) : '', f.total != null ? fmt(f.total) : '', f.date || ''];
+      }),
+      samples: info.samples.filter(function (s) { return !s.lab; }).map(function (s) {
+        return [s.boring, s.name, s.top != null ? fmt(s.top) : '', s.bottom != null ? fmt(s.bottom) : '', ''];
+      })
+    };
+  }
+
+  // name keys: case, spaces and punctuation ignored, leading zeros in numbers dropped
+  function nameKey(s) {
+    return String(s || '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ')
+      .replace(/([A-Z])(\d)/g, '$1 $2').replace(/(\d)([A-Z])/g, '$1 $2').trim()
+      .replace(/\b0+(\d)/g, '$1').replace(/ /g, '');
+  }
+
+  /**
+   * Insert a dataset into the DIGGS file it was matched against.
+   * settings.boringStatus: 'as drilled' | 'proposed'
+   * settings.previousLab: 'replace' (default) | 'keep'
+   */
+  function mergeDiggs(info, ds, settings) {
+    var text = info.text, root = info.root, D = NS_DIGGS;
+    var replace = settings.previousLab !== 'keep';
+    var edits = [];  // {at, del, ins, seq}
+    var nl = /\r\n/.test(text.slice(0, 2000)) ? '\r\n' : '\n';
+    function edit(at, del, ins) { edits.push({ at: at, del: del, ins: ins, seq: edits.length }); }
+    var removed = {};
+
+    function lineStart(pos) {
+      var j = pos;
+      while (j > 0 && (text[j - 1] === ' ' || text[j - 1] === '\t')) j--;
+      if (j > 0 && text[j - 1] === '\n') return (j > 1 && text[j - 2] === '\r') ? j - 2 : j - 1;
+      return pos;
+    }
+    function remove(el) {
+      var from = lineStart(el.start);
+      edit(from, el.end - from, '');
+      removed[el.start] = true;
+    }
+    var reserved = {};
+    Object.keys(info.ids).forEach(function (k) { reserved[k] = true; });
+    if (replace) {
+      info.labBlocks.forEach(remove);
+      info.labAudits.forEach(remove);
+      // ids inside removed blocks may be reused
+      info.labBlocks.forEach(function (b) {
+        (function walk(el) {
+          var id = attrOf(el, NS_GML, 'id');
+          if (id) delete reserved[id];
+          el.children.forEach(walk);
+        })(b);
+      });
+    }
+    var uid = makeUid(reserved, LAB_PREFIX);
+
+    var bh = {};
+    info.features.forEach(function (f) { bh[f.name] = { id: f.id, lrs: f.lrs }; });
+    var frag = labFragments(ds, { uid: uid, projectId: info.projectId, bh: bh, densityUnit: densityUnitOf(settings) });
+
+    // indentation used by the file for root children
+    var indentMatch = /\n([ \t]+)</.exec(text.slice(root.contentStart, root.contentStart + 400));
+    var unit = indentMatch ? indentMatch[1] : '  ';
+    var nsAttrs = { xmlns: D, 'xmlns:gml': NS_GML, 'xmlns:xlink': NS_XLINK };
+    function block(nodes) {
+      return nodes.map(function (node) {
+        Object.keys(nsAttrs).forEach(function (k) { node.attrs[k] = nsAttrs[k]; });
+        var out = [];
+        serialize(node, 0, out);
+        return nl + out.map(function (l) {
+          var m = /^((?:  )*)/.exec(l);
+          return unit + new Array(m[1].length / 2 + 1).join(unit) + l.slice(m[1].length);
+        }).join(nl);
+      }).join('');
+    }
+
+    // root child order: documentInformation, project, program, samplingFeature,
+    // samplingActivity, sample, observation, measurement, constructionActivity, group
+    var ORDER = ['documentInformation', 'project', 'program', 'samplingFeature', 'samplingActivity',
+                 'sample', 'observation', 'measurement', 'constructionActivity', 'group'];
+    var kept = root.children.filter(function (c) { return !removed[c.start]; });
+    function insertAfter(localName) {
+      var rank = ORDER.indexOf(localName), pos = null;
+      kept.forEach(function (c) {
+        var r = ORDER.indexOf(c.local);
+        if (c.ns === D && r >= 0 && r <= rank) pos = c.end;
+      });
+      return pos === null ? root.contentStart : pos;
+    }
+    [['samplingActivity', frag.activities], ['sample', frag.samples], ['measurement', frag.measurements]]
+      .forEach(function (pair) {
+        if (pair[1].length) edit(insertAfter(pair[0]), 0, block(pair[1]));
+      });
+
+    // audit trail note
+    var tests = frag.measurements.length;
+    var nSamples = ds.sampleOrder.filter(function (k) { return ds.samples[k].tests.length; }).length;
+    var note = LAB_AUDIT_MARK + (settings.toolVersion ? ' (version ' + settings.toolVersion + ')' : '') +
+      (settings.labName ? ' for ' + settings.labName : '') + ': ' + tests + ' test' + (tests === 1 ? '' : 's') +
+      ' on ' + nSamples + ' sample' + (nSamples === 1 ? '' : 's') +
+      '. Boring locations are as given in this file' +
+      (settings.boringStatus === 'proposed'
+        ? ', which the laboratory identified as PROPOSED locations; confirm against the as-drilled locations.'
+        : ', which the laboratory identified as as-drilled locations.');
+    var today = settings.today || new Date().toISOString().slice(0, 10);
+    if (info.docInfo) {
+      var trail = E('auditTrail', {}, E('Remark', {}, [E('content', {}, note), E('remarkDateTime', {}, today)]));
+      var di = info.docInfo;
+      var AFTER = ['creationDate', 'effectiveDate', 'expirationDate', 'author', 'disclaimer', 'sourceSoftware',
+                   'destination', 'destinationSoftware', 'auditTrail'];
+      var at = null;
+      di.children.forEach(function (c) {
+        if (c.ns === D && AFTER.indexOf(c.local) >= 0 && !removed[c.start]) at = c.end;
+      });
+      if (at === null) at = di.contentStart;
+      var childIndent = di.children.length ? (/([ \t]*)$/.exec(text.slice(0, di.children[0].start))[1]) : unit + unit + unit;
+      Object.keys(nsAttrs).forEach(function (k) { trail.attrs[k] = nsAttrs[k]; });
+      var lines = [];
+      serialize(trail, 0, lines);
+      edit(at, 0, nl + lines.map(function (l) {
+        var m = /^((?:  )*)/.exec(l);
+        return childIndent + new Array(m[1].length / 2 + 1).join(unit) + l.slice(m[1].length);
+      }).join(nl));
+    }
+
+    // apply from the end; at one position, removals first, then later
+    // insertions before earlier ones so the final order matches push order
+    edits.sort(function (a, b) { return b.at - a.at || b.del - a.del || b.seq - a.seq; });
+    var out = text;
+    edits.forEach(function (e) { out = out.slice(0, e.at) + e.ins + out.slice(e.at + e.del); });
+    return out;
   }
 
   function summarize(ds) {
@@ -1850,7 +2454,7 @@ var LabDiggs = (function () {
 
   function isNumeric(s) { return /^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(String(s).trim()); }
 
-  function tableSheet(t, examples) {
+  function tableSheet(t, examples, seedRows, sampleLookup) {
     var sh = new Sheet(t.sheet);
     sh.frozen = true;
     t.columns.forEach(function (col, i) {
@@ -1862,12 +2466,16 @@ var LabDiggs = (function () {
       // header note, then the data-row rule with the same note
       sh.validations.push({ sqref: L + '1', promptTitle: col.name, prompt: prompt });
       var rule = columnRule(col);
+      if (sampleLookup && col.name === 'sample_id') {
+        rule = { type: 'list', formula1: 'SampleIds', errorStyle: 'information', errorTitle: 'New sample',
+                 error: 'This sample is not on the Samples sheet. It will be added as a new sample at the depths you give.' };
+      }
       rule.sqref = L + '2:' + L + WB_MAX_ROW;
       rule.promptTitle = col.name;
       rule.prompt = prompt;
       sh.validations.push(rule);
     });
-    (examples ? t.examples : []).forEach(function (row, r) {
+    (seedRows || (examples ? t.examples : [])).forEach(function (row, r) {
       row.forEach(function (v, i) {
         var col = t.columns[i];
         if (v === '' || !col) return;
@@ -1878,7 +2486,7 @@ var LabDiggs = (function () {
     return sh;
   }
 
-  function projectSheet(examples) {
+  function projectSheet(examples, seed) {
     var sh = new Sheet(PROJECT.sheet);
     sh.frozen = true;
     ['field', 'value', 'notes'].forEach(function (h, i) { sh.set(0, i, h, i < 2 ? ST.reqHead : ST.optHead); });
@@ -1887,7 +2495,10 @@ var LabDiggs = (function () {
     PROJECT.fields.forEach(function (f, i) {
       var r = i + 1, ref = 'B' + (r + 1);
       sh.set(r, 0, f.key, ST.bold);
-      sh.set(r, 1, examples ? f.example : (defaults[f.key] || ''), ST.text);
+      var value = examples ? f.example : (defaults[f.key] || '');
+      if (seed && f.key === 'project_name') value = seed.projectName || '';
+      if (seed && f.key === 'depth_unit' && seed.depthUnit) value = seed.depthUnit;
+      sh.set(r, 1, value, ST.text);
       sh.set(r, 2, f.label + '. ' + f.doc, ST.wrap);
       var v = { sqref: ref, promptTitle: f.label, prompt: f.doc };
       if (f.choices) {
@@ -1898,24 +2509,41 @@ var LabDiggs = (function () {
       }
       sh.validations.push(v);
     });
+    if (seed) {
+      var r = PROJECT.fields.length + 1;
+      sh.set(r, 0, 'source_file', ST.bold);
+      sh.set(r, 1, seed.sourceFile, ST.text);
+      sh.set(r, 2, 'The DIGGS file this workbook was prepared from. Drop that file on the page together with this workbook.', ST.wrap);
+    }
     return sh;
   }
 
-  function instructionsSheet() {
+  function instructionsSheet(seed) {
     var sh = new Sheet('Instructions');
     sh.cols = [{ width: 22 }, { width: 24 }, { width: 12 }, { width: 80 }];
     var r = 0;
     sh.set(r++, 0, 'Lab Results to DIGGS: workbook template', ST.title);
     sh.set(r++, 0, 'Fill this workbook in, then drop it on the Lab Results to DIGGS page. The page reads it on your computer and writes the DIGGS XML file.');
+    if (seed) {
+      sh.set(r++, 0, 'Prepared from ' + seed.sourceFile + '. The borings, their locations and the listed samples come from that file: ' +
+        'enter results on the test sheets, using the boring and sample IDs shown on the Borings and Samples sheets. ' +
+        'Then drop this workbook and ' + seed.sourceFile + ' on the page; it adds your results to that file.', ST.bold);
+    }
     r++;
     sh.set(r++, 0, 'How to use it', ST.heading);
-    [
+    (seed ? [
+      '1. Check the Project sheet: add your laboratory name. The project name and depth unit come from the DIGGS file.',
+      '2. The Borings sheet lists the borings in the DIGGS file. Their locations are taken from that file, so you do not need to edit it.',
+      '3. Enter results on the sheet for each test you ran. Pick boring_id and sample_id from the lists; a sample that is not listed is added at the depths you give.',
+      '4. Rows on different sheets with the same boring_id and sample_id are the same sample.',
+      '5. Save the workbook as .xlsx and drop it on the page together with the DIGGS file.'
+    ] : [
       '1. Fill in the Project sheet: project name, client, laboratory and units.',
       '2. List each boring on the Borings sheet with latitude and longitude (WGS84 decimal degrees). DIGGS requires a location for every boring. Ground elevation is strongly recommended.',
       '3. Enter results on the sheet for each test you ran. Leave the other sheets empty.',
       '4. Every results row names the boring, the sample and its depth. Rows on different sheets with the same boring_id and sample_id are the same sample, so keep the IDs identical.',
       '5. Save the workbook as .xlsx and drop it on the page.'
-    ].forEach(function (line) { sh.set(r++, 0, line); });
+    ]).forEach(function (line) { sh.set(r++, 0, line); });
     r++;
     sh.set(r++, 0, 'Rules', ST.heading);
     [
@@ -1954,10 +2582,17 @@ var LabDiggs = (function () {
     return sh;
   }
 
-  /** The template workbook as .xlsx bytes (blank, or with example rows). */
-  function writeWorkbook(examples) {
-    var sheets = [instructionsSheet(), projectSheet(examples)];
-    TEMPLATES.forEach(function (t) { if (!t.isProject) sheets.push(tableSheet(t, examples)); });
+  /** The template workbook as .xlsx bytes: blank, with example rows, or
+   *  prepared from a DIGGS file (seed from sourceSeed()). */
+  function writeWorkbook(examples, seed) {
+    if (seed) examples = false;
+    var sampleLookup = !!(seed && seed.samples.length);
+    var sheets = [instructionsSheet(seed), projectSheet(examples, seed)];
+    TEMPLATES.forEach(function (t) {
+      if (t.isProject) return;
+      var rows = seed ? (t.id === 'borings' ? seed.borings : (t.id === 'samples' ? seed.samples : [])) : null;
+      sheets.push(tableSheet(t, examples, rows, sampleLookup && t.keyed && t.id !== 'samples'));
+    });
     var boringsIndex = -1;
     sheets.forEach(function (s, i) { if (s.name === TEMPLATE_BY_ID.borings.sheet) boringsIndex = i; });
 
@@ -1983,7 +2618,10 @@ var LabDiggs = (function () {
       '<bookViews><workbookView activeTab="0"/></bookViews>' +
       '<sheets>' + wbSheets.join('') + '</sheets>' +
       (boringsIndex >= 0 ? '<definedNames><definedName name="BoringIds">' +
-        esc("'" + borings.replace(/'/g, "''") + "'!$A$2:$A$" + WB_MAX_ROW) + '</definedName></definedNames>' : '') +
+        esc("'" + borings.replace(/'/g, "''") + "'!$A$2:$A$" + WB_MAX_ROW) + '</definedName>' +
+        (sampleLookup ? '<definedName name="SampleIds">' +
+          esc("'" + TEMPLATE_BY_ID.samples.sheet.replace(/'/g, "''") + "'!$B$2:$B$" + WB_MAX_ROW) + '</definedName>' : '') +
+        '</definedNames>' : '') +
       '</workbook>';
     var core = XML_HEAD +
       '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" ' +
@@ -2014,6 +2652,8 @@ var LabDiggs = (function () {
     normHeader: normHeader, sieveSize: sieveSize, num: num, fmt: fmt, normDate: normDate,
     dValue: dValue, passingAt: passingAt, finesSymbol: finesSymbol, uscs: uscs,
     gradationSummary: gradationSummary, compactionSummary: compactionSummary,
+    parseXml: parseXml, readDiggs: readDiggs, describeSource: describeSource, sourceSeed: sourceSeed,
+    mergeDiggs: mergeDiggs, nameKey: nameKey,
     buildDataset: buildDataset, generateDiggs: generateDiggs, summarize: summarize,
     testName: testName, makeZip: makeZip, crc32: crc32, PROJECT: PROJECT,
     fileRows: fileRows, projectSettings: projectSettings,

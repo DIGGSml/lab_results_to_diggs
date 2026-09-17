@@ -74,7 +74,7 @@ input[type=text], select {
   font: inherit; font-weight: 400; color: var(--text); padding: 7px 9px;
   border: 1px solid var(--border); border-radius: 6px; background: #fff; width: 100%; min-width: 0;
 }
-label.inline input { width: 200px; }
+label.inline input[type=text] { width: 200px; }
 input:focus, select:focus, .dropzone:focus { outline: 2px solid var(--tan); outline-offset: 1px; }
 .borings input { padding: 5px 7px; min-width: 90px; }
 .borings input.missing { border-color: var(--error); background: var(--error-bg); }
@@ -84,6 +84,14 @@ input:focus, select:focus, .dropzone:focus { outline: 2px solid var(--tan); outl
 }
 .dropzone.over { background: var(--green-light); border-color: var(--green); }
 .summary { margin-bottom: 8px; }
+#source-info { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-top: 12px; background: var(--cream); }
+.source-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.source-name { font-weight: 700; color: var(--green-dark); overflow-wrap: anywhere; }
+fieldset.choice { border: none; padding: 0; margin: 10px 0; display: flex; flex-wrap: wrap; gap: 4px 18px; }
+fieldset.choice legend { font-weight: 600; color: var(--brown-dark); font-size: 0.9em; padding: 0; margin-bottom: 4px; width: 100%; }
+fieldset.choice label { font-weight: 400; color: var(--text); }
+.merge-mode .standalone-only { display: none; }
+h2 .tag { font-size: 0.6em; font-weight: 600; background: var(--green-light); color: var(--green-dark); }
 .stats { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; }
 .stat { background: var(--sand); border-radius: 8px; padding: 8px 14px; min-width: 110px; }
 .stat b { display: block; font-size: 1.4rem; color: var(--green-dark); }
@@ -119,7 +127,7 @@ pre#preview {
   h1 { font-size: 1.5rem; }
   .card { padding: 14px; }
   label.inline { flex-direction: column; align-items: stretch; }
-  label.inline input { width: 100%; }
+  label.inline input[type=text] { width: 100%; }
   .colhelp dl { grid-template-columns: 1fr; }
   .colhelp dd { margin-bottom: 6px; }
 }

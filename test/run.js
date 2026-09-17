@@ -116,6 +116,70 @@ test('reports bad input rows', () => {
   }
 });
 
+console.log('starting from a DIGGS file');
+function exampleProject(lineEnd, prefixed) {
+  const entries = L.workbookEntries('example.xlsx', L.writeWorkbook(true));
+  const site = entries.filter((e) => e.detectName === 'borings' || e.detectName === 'samples');
+  let xml = L.generateDiggs(L.buildDataset(site, {}), { projectName: 'Example project' });
+  if (prefixed) {
+    xml = xml.replace('xmlns="http://diggsml.org/schemas/3"', 'xmlns:diggs="http://diggsml.org/schemas/3"')
+      .replace(/<(\/?)([A-Za-z][\w.-]*)(?=[\s\/>])/g, '<$1diggs:$2');
+  }
+  return { xml: xml.replace(/\n/g, lineEnd), results: entries.filter((e) => e.detectName !== 'borings') };
+}
+const INSERTED = /\r?\n[ \t]*<(samplingActivity|sample|measurement|auditTrail) xmlns="http:\/\/diggsml\.org\/schemas\/3"[^>]*>[\s\S]*?<\/\1>/g;
+for (const [label, lineEnd, prefixed] of [['LF', '\n', false], ['CRLF', '\r\n', false], ['diggs: prefix', '\n', true]]) {
+  test('merges into a project file (' + label + '), keeping it byte for byte', () => {
+    const p = exampleProject(lineEnd, prefixed);
+    const info = L.readDiggs(p.xml, 'project.xml');
+    assert.deepStrictEqual(L.describeSource(info).names, ['B-1', 'B-2']);
+    const st = { source: info, labName: 'Lab', today: '2026-01-01' };
+    const ds = L.buildDataset(p.results, st);
+    assert.deepStrictEqual(ds.errors, []);
+    assert.strictEqual(ds.sampleOrder.filter((k) => ds.samples[k].sourceId).length, 2);
+    const merged = L.mergeDiggs(info, ds, st);
+    assert.strictEqual(merged.replace(INSERTED, ''), p.xml);
+    if (lineEnd === '\r\n') assert.ok(!/[^\r]\n/.test(merged));
+    // inserted records follow the root element order
+    const order = ['samplingFeature', 'samplingActivity', 'sample', 'measurement'];
+    const seen = [...merged.matchAll(/\n[ \t]*<(?:diggs:)?(samplingFeature|samplingActivity|sample|measurement)[\s>]/g)]
+      .map((m) => order.indexOf(m[1]));
+    assert.deepStrictEqual(seen, [...seen].sort((a, b) => a - b));
+    // every added id is prefixed and unique; merging again changes nothing
+    const ids = [...merged.matchAll(/gml:id="([^"]+)"/g)].map((m) => m[1]);
+    assert.strictEqual(new Set(ids).size, ids.length);
+    const info2 = L.readDiggs(merged, 'project.xml');
+    assert.strictEqual(L.describeSource(info2).labTests, 14);
+    assert.strictEqual(L.mergeDiggs(info2, L.buildDataset(p.results, Object.assign({}, st, { source: info2 })), st), merged);
+  });
+}
+test('reports borings and units that do not fit the file', () => {
+  const p = exampleProject('\n', false);
+  const info = L.readDiggs(p.xml, 'project.xml');
+  const bad = [{ name: 'water_content.csv', text:
+    'boring_id,sample_id,top_depth,bottom_depth,water_content_pct\nb01,S-1,,,10\nB-9,S-1,1,2,10\n' }];
+  const ds = L.buildDataset(bad, { source: info, workbookDepthUnit: 'm' });
+  const all = ds.errors.join(' | ');
+  assert.ok(ds.warnings.some((w) => w.includes('"b01" was matched to "B-1"')));
+  assert.ok(all.includes('boring "B-9" is not in project.xml'));
+  assert.ok(all.includes('The workbook gives depths in meters'));
+});
+test('refuses files it cannot merge into', () => {
+  assert.throws(() => L.readDiggs('<Diggs xmlns="http://diggsml.org/schemas/2.6"/>'), /not a DIGGS 3 file/);
+  assert.throws(() => L.readDiggs('<!DOCTYPE x><Diggs xmlns="http://diggsml.org/schemas/3"/>'), /DOCTYPE/);
+  assert.throws(() => L.readDiggs('<Diggs xmlns="http://diggsml.org/schemas/3">\n<a></b></Diggs>'), /line 2/);
+});
+test('prepared workbook lists the file\'s borings and samples', () => {
+  const info = L.readDiggs(exampleProject('\n', false).xml, 'project.xml');
+  const entries = L.workbookEntries('p.xlsx', L.writeWorkbook(false, L.sourceSeed(info)));
+  const by = Object.fromEntries(entries.map((e) => [e.detectName, L.fileRows(e)]));
+  assert.deepStrictEqual(by.borings.slice(1).map((r) => r[0]), ['B-1', 'B-2']);
+  assert.deepStrictEqual(by.samples.slice(1).map((r) => r[1]), ['S-1', 'ST-3']);
+  assert.strictEqual(L.projectSettings(by.project).sourceFile, 'project.xml');
+  assert.ok(Buffer.from(L.readZip(L.writeWorkbook(false, L.sourceSeed(info)))['xl/workbook.xml']).toString()
+    .includes('<definedName name="SampleIds">'));
+});
+
 console.log('derived values');
 test('Proctor vertex (parabola through the peak)', () => {
   const t = [[11.8, 109.6], [13.9, 112.8], [15.8, 114.1], [17.9, 112.3], [20.1, 108.7]].map(([w, dd]) => ({ w, dd }));
