@@ -23,6 +23,22 @@ var LabDiggs = (function () {
     return 'https://www.opengis.net/def/crs-compound?1=' + EPSG + '4326%262=' + EPSG + vert;
   }
 
+  // raw masses: DIGGS stores some as masses and some as weights (forces)
+  var MASS_UNITS = { g: 'gf', kg: 'kgf', lbm: 'lbf' };
+  var DIMENSION_UNITS = ['mm', 'cm', 'in', 'ft'];
+  var VOLUME_UNITS = ['cm3', 'mL', 'in3', 'ft3'];
+
+  function unitsOf(settings) {
+    var mass = MASS_UNITS[settings.massUnit] ? settings.massUnit : 'g';
+    return {
+      density: DENSITY_UNITS[settings.densityUnit] ? settings.densityUnit : 'lbm/ft3',
+      mass: mass,
+      force: MASS_UNITS[mass],
+      dim: DIMENSION_UNITS.indexOf(settings.dimensionUnit) >= 0 ? settings.dimensionUnit : 'mm',
+      vol: VOLUME_UNITS.indexOf(settings.volumeUnit) >= 0 ? settings.volumeUnit : 'cm3'
+    };
+  }
+
   var DENSITY_UNITS = {
     'lbm/ft3': 'lbm/ft3 (pcf)',
     'lbf/ft3': 'lbf/ft3 (pcf, unit weight)',
@@ -156,13 +172,14 @@ var LabDiggs = (function () {
     chloride: 'chloride_ppm', chloride_content: 'chloride_ppm', soil_ph: 'ph'
   };
 
-  function normHeader(h) {
+  function normHeader(h, own) {
     var s = String(h || '').replace(/^\uFEFF/, '').trim().toLowerCase()
       .replace(/%/g, 'pct').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    if (own && own[s]) return s;   // the sheet has a column of this name
     if (ALIASES[s]) return ALIASES[s];
     // tolerate unit suffixes: top_depth_ft, ground_elevation_m, dry_density_pcf ...
     var stripped = s.replace(/_(ft|m|feet|meters|pcf|kn_m3|lbm_ft3|mg_m3|kg_m3|g_cm3)$/, '');
-    if (stripped !== s) return ALIASES[stripped] || stripped;
+    if (stripped !== s) return (own && own[stripped]) ? stripped : (ALIASES[stripped] || stripped);
     return s;
   }
 
@@ -212,13 +229,20 @@ var LabDiggs = (function () {
     return toCSV(rows);
   }
 
+  function ownColumns(t) {
+    if (!t._own) {
+      t._own = {};
+      t.columns.forEach(function (c) { t._own[c.name] = true; });
+    }
+    return t._own;
+  }
+
   function detectTemplate(fileName, headers) {
     var base = String(fileName || '').toLowerCase().replace(/^.*[\\/]/, '').replace(/\.[a-z]+$/, '')
       .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-    var cols = headers.map(normHeader);
-    var has = function (c) { return cols.indexOf(c) >= 0; };
     var matches = TEMPLATES.filter(function (t) {
-      return t.columns.every(function (c) { return !c.required || has(c.name); });
+      var cols = headers.map(function (h) { return normHeader(h, ownColumns(t)); });
+      return t.columns.every(function (c) { return !c.required || cols.indexOf(c.name) >= 0; });
     });
     for (var i = 0; i < matches.length; i++) {
       if (base === matches[i].id) return matches[i].id;
@@ -229,8 +253,9 @@ var LabDiggs = (function () {
     // Score by distinctive (non-key) columns present
     var best = null, bestScore = 0;
     matches.forEach(function (t) {
+      var cols = headers.map(function (h) { return normHeader(h, ownColumns(t)); });
       var score = t.columns.filter(function (c) {
-        return KEY_COLS.every(function (k) { return k.name !== c.name; }) && has(c.name);
+        return KEY_COLS.every(function (k) { return k.name !== c.name; }) && cols.indexOf(c.name) >= 0;
       }).length;
       if (score > bestScore) { best = t.id; bestScore = score; }
     });
@@ -292,151 +317,6 @@ var LabDiggs = (function () {
   }
 
   // ---------------------------------------------------------------------
-  // Derived values (ported from lab.py)
-  // ---------------------------------------------------------------------
-
-  /** Particle size at `percent` passing, log-linear between bracketing points.
-   *  curve: [{size, pass}] sorted by size descending. */
-  function dValue(curve, percent) {
-    for (var i = 0; i + 1 < curve.length; i++) {
-      var s1 = curve[i].size, p1 = curve[i].pass, s2 = curve[i + 1].size, p2 = curve[i + 1].pass;
-      if (p1 >= percent && percent >= p2 && p1 !== p2) {
-        var logSize = Math.log10(s2) + (percent - p2) * (Math.log10(s1) - Math.log10(s2)) / (p1 - p2);
-        return Math.pow(10, logSize);
-      }
-    }
-    return null;
-  }
-
-  /** Percent passing at `size` mm: exact point (within 1 %), else log-linear
-   *  between bracketing points, else 100 above a 100 % point. */
-  function passingAt(curve, size) {
-    for (var i = 0; i < curve.length; i++) {
-      if (Math.abs(curve[i].size - size) <= size * 0.01) return curve[i].pass;
-    }
-    for (var j = 0; j + 1 < curve.length; j++) {
-      var a = curve[j], b = curve[j + 1];
-      if (a.size > size && size > b.size) {
-        return b.pass + (Math.log10(size) - Math.log10(b.size)) *
-          (a.pass - b.pass) / (Math.log10(a.size) - Math.log10(b.size));
-      }
-    }
-    if (curve.length && size > curve[0].size && curve[0].pass >= 100) return 100;
-    return null;
-  }
-
-  function aLine(ll) { return 0.73 * (ll - 20); }
-
-  /** Plasticity-chart symbol for the fines (ASTM D2487, inorganic soils). */
-  function finesSymbol(ll, pi) {
-    if (ll == null) return 'ML';  // non-plastic with no liquid limit
-    if (ll < 50) {
-      if (pi > 7 && pi >= aLine(ll)) return 'CL';
-      if (pi >= 4 && pi <= 7 && pi >= aLine(ll)) return 'CL-ML';
-      return 'ML';
-    }
-    return pi >= aLine(ll) ? 'CH' : 'MH';
-  }
-
-  var FINE_NAMES = { 'CL': 'lean clay', 'CL-ML': 'silty clay', 'ML': 'silt',
-    'CH': 'fat clay', 'MH': 'elastic silt' };
-
-  function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
-
-  /** [symbol, group name] per ASTM D2487 for inorganic soils, or null with a
-   *  reason when the tests needed to classify were not run. */
-  function uscs(summary, plasticity) {
-    var gravel = summary.gravel, sand = summary.sand, fines = summary.fines;
-    if (gravel == null || sand == null || fines == null) {
-      return { reason: 'the gradation does not cover the No. 4 and No. 200 sieves' };
-    }
-    var fs = plasticity ? finesSymbol(plasticity.ll, plasticity.pi) : null;
-
-    if (fines >= 50) {
-      if (!fs) return { reason: 'fine-grained soil needs Atterberg limits on the same sample' };
-      var base = FINE_NAMES[fs], coarse = 100 - fines, name;
-      if (coarse < 15) name = base;
-      else if (coarse < 30) name = base + ' with ' + (sand >= gravel ? 'sand' : 'gravel');
-      else if (sand >= gravel) name = 'sandy ' + base + (gravel >= 15 ? ' with gravel' : '');
-      else name = 'gravelly ' + base + (sand >= 15 ? ' with sand' : '');
-      return { symbol: fs, name: cap(name) };
-    }
-
-    var isG = gravel > sand;
-    var letter = isG ? 'G' : 'S', soil = isG ? 'gravel' : 'sand';
-    var other = isG ? sand : gravel, otherWord = isG ? 'sand' : 'gravel';
-    var graded = null;
-    if (fines <= 12) {
-      if (summary.cu == null || summary.cc == null) {
-        return { reason: 'coarse soil with 12 % fines or less needs D10, D30 and D60 (Cu, Cc)' };
-      }
-      var well = summary.cu >= (isG ? 4 : 6) && summary.cc >= 1 && summary.cc <= 3;
-      graded = { sym: letter + (well ? 'W' : 'P'), word: well ? 'Well-graded' : 'Poorly graded' };
-    }
-    if (fines < 5) {
-      return { symbol: graded.sym, name: graded.word + ' ' + soil + (other >= 15 ? ' with ' + otherWord : '') };
-    }
-    if (!fs) return { reason: 'coarse soil with 5 % fines or more needs Atterberg limits on the same sample' };
-    var clayey = fs === 'CL' || fs === 'CH' || fs === 'CL-ML';
-    if (fines <= 12) {
-      var sym2 = letter + (clayey ? 'C' : 'M');
-      return { symbol: graded.sym + '-' + sym2,
-               name: graded.word + ' ' + soil + ' with ' + (clayey ? 'clay' : 'silt') +
-                     (other >= 15 ? ' and ' + otherWord : '') };
-    }
-    var suffix = other >= 15 ? ' with ' + otherWord : '';
-    if (fs === 'CL-ML') return { symbol: letter + 'C-' + letter + 'M', name: 'Silty, clayey ' + soil + suffix };
-    if (clayey) return { symbol: letter + 'C', name: 'Clayey ' + soil + suffix };
-    return { symbol: letter + 'M', name: 'Silty ' + soil + suffix };
-  }
-
-  function gradationSummary(curve, hasHydrometer) {
-    var out = {};
-    var fines = passingAt(curve, 0.075), p4 = passingAt(curve, 4.75);
-    if (fines != null) out.fines = fines;
-    if (fines != null && p4 != null) {
-      out.gravel = round(100 - p4, 1);
-      out.sand = round(p4 - fines, 1);
-    }
-    if (hasHydrometer && fines != null) {
-      var clay = passingAt(curve, 0.002);
-      if (clay != null && clay <= fines) {
-        out.clay = round(clay, 1);
-        out.silt = round(fines - clay, 1);
-      }
-    }
-    [10, 30, 50, 60].forEach(function (p) {
-      var d = dValue(curve, p);
-      if (d != null) out['d' + p] = round(d, 4);
-    });
-    if (out.d10 != null && out.d30 != null && out.d60 != null && out.d10 > 0) {
-      out.cu = round(out.d60 / out.d10, 2);
-      out.cc = round(out.d30 * out.d30 / (out.d10 * out.d60), 2);
-    }
-    return out;
-  }
-
-  /** {omc, mdd}: vertex of the parabola through the highest trial and its two
-   *  neighbours (lab.py compaction_summary). null when it cannot be fitted. */
-  function compactionSummary(trials) {
-    if (trials.length < 3) return null;
-    var peak = 0;
-    trials.forEach(function (t, i) { if (t.dd > trials[peak].dd) peak = i; });
-    var lo = Math.min(Math.max(peak - 1, 0), trials.length - 3);
-    var x1 = trials[lo].w, y1 = trials[lo].dd, x2 = trials[lo + 1].w, y2 = trials[lo + 1].dd,
-        x3 = trials[lo + 2].w, y3 = trials[lo + 2].dd;
-    var denom = (x1 - x2) * (x1 - x3) * (x2 - x3);
-    if (!denom) return null;
-    var a = (x3 * (y2 - y1) + x2 * (y1 - y3) + x1 * (y3 - y2)) / denom;
-    var b = (x3 * x3 * (y1 - y2) + x2 * x2 * (y3 - y1) + x1 * x1 * (y2 - y3)) / denom;
-    var c = (x2 * x3 * (x2 - x3) * y1 + x3 * x1 * (x3 - x1) * y2 + x1 * x2 * (x1 - x2) * y3) / denom;
-    if (!(a < 0)) return null;
-    var omc = -b / (2 * a);
-    if (omc < trials[0].w || omc > trials[trials.length - 1].w) return null;
-    return { omc: round(omc, 1), mdd: round(c - b * b / (4 * a), 1) };
-  }
-
-  // ---------------------------------------------------------------------
   // Dataset
   // ---------------------------------------------------------------------
 
@@ -456,7 +336,7 @@ var LabDiggs = (function () {
   function projectSettings(rows) {
     var out = {};
     if (!rows || rows.length < 2) return out;
-    var headers = rows[0].map(normHeader);
+    var headers = rows[0].map(function (h) { return normHeader(h); });
     var fi = headers.indexOf('field'), vi = headers.indexOf('value');
     if (fi < 0 || vi < 0) return out;
     var byKey = {};
@@ -628,7 +508,6 @@ var LabDiggs = (function () {
         if (!f.sheet) warn(f.name + ': ' + (rows.length ? 'no data rows' : 'file is empty'));
         return;
       }
-      var headers = rows[0].map(normHeader);
       var id = f.template || detectTemplate(f.detectName || f.name, rows[0]);
       if (!id || !TEMPLATE_BY_ID[id]) {
         if (f.sheet) warn(f.name + ': sheet not recognised, so it was ignored. Choose a template for it if it holds results.');
@@ -636,6 +515,7 @@ var LabDiggs = (function () {
         return;
       }
       var t = TEMPLATE_BY_ID[id];
+      var headers = rows[0].map(function (h) { return normHeader(h, ownColumns(t)); });
       if (t.isProject) { ds.files.push({ name: f.name, template: id, rows: rows.length - 1 }); return; }
       var missing = t.columns.filter(function (c) { return c.required && headers.indexOf(c.name) < 0; });
       if (missing.length) {
@@ -724,11 +604,26 @@ var LabDiggs = (function () {
 
     rowsOf('samples').forEach(function (r) { if (keyed(r)) sample(r._where, r); });
 
+    // Raw measurements are carried through untouched; reported results are
+    // used as given. Anything missing is only filled in when the user asks
+    // reported values are used as given; nothing is computed.
+    function raw(r, names) {
+      var o = {};
+      names.forEach(function (n) {
+        var v = numField(r, n, { min: 0 });
+        if (v != null) o[n] = v;
+      });
+      return o;
+    }
+    function text(r, name) { return (r[name] || '').trim() || null; }
+
     var single = {
       water_content: function (r) {
-        var w = numField(r, 'water_content_pct', { min: 0 });
-        if (w == null) return null;
-        return { w: w, dryingTemp: numField(r, 'drying_temperature_c') };
+        var d = { w: numField(r, 'water_content_pct', { min: 0 }),
+                  dryingTemp: numField(r, 'drying_temperature_c'),
+                  dryingTime: numField(r, 'drying_time_h', { min: 0 }),
+                  raw: raw(r, ['tare_mass', 'wet_mass_with_tare', 'dry_mass_with_tare']) };
+        return (d.w != null || Object.keys(d.raw).length) ? d : null;
       },
       atterberg_limits: function (r) {
         var np = truthy(r.non_plastic) || /^n\.?p\.?$/i.test(r.plastic_limit || '') ||
@@ -736,46 +631,48 @@ var LabDiggs = (function () {
         var pl = /^n\.?p\.?$/i.test(r.plastic_limit || '') ? null : numField(r, 'plastic_limit', { min: 0 });
         var pi = /^n\.?p\.?$/i.test(r.plasticity_index || '') ? null : numField(r, 'plasticity_index', { min: 0 });
         var ll = /^n\.?[pv]\.?$/i.test(r.liquid_limit || '') ? null : numField(r, 'liquid_limit', { min: 0 });
-        if (np) return { ll: ll, nonPlastic: true, prep: r.preparation, llMethod: r.ll_method };
-        if (ll == null && pl == null) {
-          err(r._where + ': Atterberg row needs liquid_limit and plastic_limit, or non_plastic = TRUE');
-          return null;
-        }
-        if (ll == null || pl == null) {
-          err(r._where + ': Atterberg row needs both liquid_limit and plastic_limit');
-          return null;
-        }
-        var rll = Math.round(ll), rpl = Math.round(pl);
-        if (rll !== ll || rpl !== pl) warn(r._where + ': Atterberg limits are reported as whole numbers; rounded');
-        if (pi == null) pi = rll - rpl;
-        else if (Math.round(pi) !== rll - rpl) {
-          warn(r._where + ': plasticity_index ' + pi + ' is not LL - PL (' + (rll - rpl) + '); kept as reported');
-        }
-        return { ll: rll, pl: rpl, pi: Math.round(pi), nonPlastic: false,
-                 prep: r.preparation, llMethod: r.ll_method };
+        var d = { ll: ll, pl: pl, pi: pi, nonPlastic: np, prep: r.preparation, llMethod: r.ll_method,
+                  ovenDried: r.oven_dried_before_test ? truthy(r.oven_dried_before_test) : null,
+                  retainedNo40: text(r, 'percent_retained_no40'), trials: [] };
+        if (np) { d.pl = d.pi = null; return d; }
+        if (ll != null) d.ll = Math.round(ll);
+        if (pl != null) d.pl = Math.round(pl);
+        if (ll != null && pl != null) {
+          if (pi == null) d.pi = null;  // only computed on request
+          else if (Math.round(pi) !== d.ll - d.pl) {
+            warn(r._where + ': plasticity_index ' + pi + ' is not LL - PL (' + (d.ll - d.pl) + '); kept as reported');
+            d.pi = Math.round(pi);
+          } else d.pi = Math.round(pi);
+        } else if (pi != null) d.pi = Math.round(pi);
+        return d;
       },
       wash_200: function (r) {
-        var p = numField(r, 'percent_passing_200', { min: 0, max: 100 });
-        return p == null ? null : { p200: p };
+        var d = { p200: numField(r, 'percent_passing_200', { min: 0, max: 100 }),
+                  raw: raw(r, ['total_dry_mass', 'mass_retained_after_wash']) };
+        return (d.p200 != null || Object.keys(d.raw).length) ? d : null;
       },
       specific_gravity: function (r) {
-        var gs = numField(r, 'specific_gravity', { min: 1, max: 5 });
-        if (gs == null) return null;
-        var t = numField(r, 'water_temperature_c');
-        return { gs: gs, waterTemp: t == null ? 20 : t };
+        var d = { gs: numField(r, 'specific_gravity', { min: 1, max: 5 }),
+                  waterTemp: numField(r, 'water_temperature_c'),
+                  soilTemp: numField(r, 'temperature_water_soil_c'),
+                  k: numField(r, 'correction_factor', { min: 0 }),
+                  raw: raw(r, ['mass_dry_soil', 'mass_pyc_water', 'mass_pyc_water_soil']) };
+        return (d.gs != null || Object.keys(d.raw).length) ? d : null;
       },
       unit_weight: function (r) {
-        var moist = numField(r, 'moist_density', { min: 0 });
-        var dry = numField(r, 'dry_density', { min: 0 });
-        var w = numField(r, 'water_content_pct', { min: 0 });
-        if (moist == null && dry == null) return null;
-        return { moist: moist, dry: dry, w: w };
+        var d = { moist: numField(r, 'moist_density', { min: 0 }),
+                  dry: numField(r, 'dry_density', { min: 0 }),
+                  w: numField(r, 'water_content_pct', { min: 0 }),
+                  raw: raw(r, ['specimen_mass', 'specimen_dry_mass', 'diameter', 'height', 'volume']) };
+        return (d.moist != null || d.dry != null || Object.keys(d.raw).length) ? d : null;
       },
       organic_content: function (r) {
-        var loi = numField(r, 'organic_content_pct', { min: 0, max: 100 });
-        if (loi == null) return null;
-        var t = numField(r, 'ignition_temperature_c');
-        return { loi: loi, ignitionTemp: t == null ? 440 : t };
+        var d = { loi: numField(r, 'organic_content_pct', { min: 0, max: 100 }),
+                  ignitionTemp: numField(r, 'ignition_temperature_c'),
+                  ignitionTime: numField(r, 'ignition_time_h', { min: 0 }),
+                  dryingTemp: numField(r, 'drying_temperature_c'),
+                  raw: raw(r, ['mass_dry_before_ignition', 'mass_ash']) };
+        return (d.loi != null || Object.keys(d.raw).length) ? d : null;
       }
     };
 
@@ -802,17 +699,57 @@ var LabDiggs = (function () {
     rowsOf('corrosion').forEach(function (r) {
       if (!keyed(r)) return;
       var smp = sample(r._where, r);
+      var extra = {
+        ph: { phTemp: numField(r, 'ph_temperature_c') },
+        resistivity: { electrodeType: text(r, 'electrode_type'),
+                       waterResistivity: numField(r, 'water_resistivity_ohm_cm', { min: 0 }),
+                       raw: raw(r, ['resistance_ohm', 'soil_box_constant', 'electrode_spacing']) }
+      };
       var any = false;
       CORR.forEach(function (c) {
         var v = numField(r, c[1], { min: c[2], max: c[3] });
-        if (v == null) return;
+        var ex = extra[c[0]] || {};
+        var hasRaw = ex.raw && Object.keys(ex.raw).length;
+        if (v == null && !hasRaw) return;
         any = true;
-        addTest(smp, c[0], { value: v, where: r._where });
+        addTest(smp, c[0], Object.assign({ value: v, where: r._where }, ex));
       });
       if (!any) warn(r._where + ': no corrosion values; row skipped');
     });
 
+    // Atterberg trials (raw multi-point data)
+    rowsOf('atterberg_trials').forEach(function (r) {
+      if (!keyed(r)) return;
+      var smp = sample(r._where, r);
+      var kind = String(r.trial_type || '').toLowerCase().replace(/[^a-z]/g, '');
+      if (kind === 'casagrande' || kind === 'liquidlimit' || kind === 'll') kind = 'casagrande';
+      else if (kind === 'plasticlimit' || kind === 'pl') kind = 'plastic_limit';
+      else if (kind === 'fallcone' || kind === 'cone') kind = 'fall_cone';
+      else { err(r._where + ': trial_type "' + r.trial_type + '" must be casagrande, plastic_limit or fall_cone'); return; }
+      var trial = { type: kind, n: numField(r, 'trial', { min: 1 }),
+                    blows: numField(r, 'blows', { min: 1 }),
+                    w: numField(r, 'water_content_pct', { min: 0 }),
+                    penetration: numField(r, 'penetration_mm', { min: 0 }),
+                    raw: raw(r, ['tare_mass', 'wet_mass_with_tare', 'dry_mass_with_tare']),
+                    where: r._where };
+      if (trial.w == null) {
+        err(r._where + ': an Atterberg trial needs water_content_pct');
+        return;
+      }
+      if (kind === 'casagrande' && trial.blows == null) {
+        err(r._where + ': a Casagrande trial needs its blow count');
+        return;
+      }
+      if (kind === 'fall_cone' && trial.penetration == null) {
+        err(r._where + ': a fall cone trial needs penetration_mm');
+        return;
+      }
+      (smp.atterbergTrials = smp.atterbergTrials || []).push(trial);
+    });
+
     // gradation (long): group by sample + standard
+    var SAMPLE_LEVEL = ['total_dry_mass', 'pan_mass_retained', 'percent_gravel', 'percent_sand',
+      'percent_silt', 'percent_clay', 'percent_fines', 'd10', 'd30', 'd50', 'd60', 'cu', 'cc'];
     var groups = {}, groupOrder = [];
     rowsOf('gradation').forEach(function (r) {
       if (!keyed(r)) return;
@@ -826,37 +763,70 @@ var LabDiggs = (function () {
       var gk = smp.key + '\u0000' + (legacy ? 'D422' : '');
       var g = groups[gk];
       if (!g) {
-        g = groups[gk] = { smp: smp, legacy: legacy, points: [], where: r._where };
+        g = groups[gk] = { smp: smp, legacy: legacy, points: [], pan: null, reported: {}, where: r._where };
         groupOrder.push(gk);
       }
       if (r.uscs_symbol && !g.uscsSymbol) g.uscsSymbol = r.uscs_symbol.toUpperCase().replace(/\s+/g, '');
       if (r.uscs_group_name && !g.uscsName) g.uscsName = r.uscs_group_name;
+      // sample-level columns: taken from the first row that fills them in
+      SAMPLE_LEVEL.forEach(function (name) {
+        if (g.reported[name] != null) return;
+        var v = numField(r, name, { min: 0 });
+        if (v != null) g.reported[name] = v;
+      });
       var method = String(r.method || '').toLowerCase().trim();
       if (method.indexOf('hyd') === 0 || method === 'sedimentation') method = 'hydrometer';
+      else if (method === 'pan') method = 'pan';
       else if (method.indexOf('siev') === 0 || method === '') method = 'sieve';
-      else { err(r._where + ': method "' + r.method + '" must be sieve or hydrometer'); return; }
+      else { err(r._where + ': method "' + r.method + '" must be sieve, hydrometer or pan'); return; }
+
       var pass = numField(r, 'percent_passing', { min: 0, max: 100 });
-      if (pass == null) {
-        if (r.percent_passing === '') warn(r._where + ': percent_passing is blank; row skipped');
+      var retainedPct = numField(r, 'percent_retained', { min: 0, max: 100 });
+      var retainedMass = numField(r, 'mass_retained', { min: 0 });
+      if (method === 'pan') {
+        if (pass == null && retainedPct == null && retainedMass == null) {
+          warn(r._where + ': the pan row has no values; row skipped');
+          return;
+        }
+        g.pan = { pass: pass, retainedPct: retainedPct, retainedMass: retainedMass, where: r._where };
+        return;
+      }
+      var reading = {
+        elapsed: numField(r, 'elapsed_min', { min: 0 }),
+        reading: numField(r, 'hydrometer_reading'),
+        temperature: numField(r, 'temperature_c'),
+        correction: numField(r, 'composite_correction'),
+        corrected: numField(r, 'corrected_reading'),
+        effectiveLength: numField(r, 'effective_length', { min: 0 })
+      };
+      var hasReading = Object.keys(reading).some(function (k) { return reading[k] != null; });
+      if (pass == null && retainedPct == null && retainedMass == null && !hasReading) {
+        warn(r._where + ': the row has no percent passing, mass retained or reading; row skipped');
         return;
       }
       var size = numField(r, 'particle_size_mm', { min: 0 });
       if (size === 0) { err(r._where + ': particle_size_mm must be greater than 0'); return; }
       if (size == null && method === 'sieve') size = sieveSize(r.sieve);
-      if (size == null) {
+      if (size == null && !(method === 'hydrometer' && hasReading)) {
         err(r._where + ': give particle_size_mm' + (method === 'sieve' ? ' (sieve "' + r.sieve + '" is not a standard designation)' : ''));
         return;
       }
-      g.points.push({ method: method, sieve: method === 'sieve' ? r.sieve : '', size: size, pass: pass, where: r._where });
+      g.points.push({ method: method, sieve: method === 'sieve' ? r.sieve : '', size: size, pass: pass,
+                      retainedPct: retainedPct, retainedMass: retainedMass, reading: reading,
+                      hasReading: hasReading, where: r._where });
     });
     groupOrder.forEach(function (gk) {
       var g = groups[gk];
-      if (!g.points.length) return;
+      if (!g.points.length && !g.pan) return;
       var sieves = g.points.filter(function (p) { return p.method === 'sieve'; });
       var hydro = g.points.filter(function (p) { return p.method === 'hydrometer'; });
-      var bySize = function (a, b) { return b.size - a.size; };
-      sieves.sort(bySize); hydro.sort(bySize);
-      var curve = sieves.concat(hydro).sort(bySize);
+      sieves.sort(function (a, b) { return (b.size == null ? -1 : b.size) - (a.size == null ? -1 : a.size); });
+      hydro.sort(function (a, b) {
+        if (a.size != null && b.size != null) return b.size - a.size;   // coarse to fine
+        return (a.reading.elapsed || 0) - (b.reading.elapsed || 0);     // else in reading order
+      });
+      var curve = sieves.concat(hydro).filter(function (p) { return p.size != null && p.pass != null; })
+        .sort(function (a, b) { return b.size - a.size; });
       for (var i = 0; i + 1 < curve.length; i++) {
         if (curve[i + 1].pass > curve[i].pass + 1e-9) {
           warn(g.where + ': percent passing rises from ' + fmt(curve[i].pass) + ' at ' + fmt(curve[i].size) +
@@ -866,7 +836,7 @@ var LabDiggs = (function () {
         }
       }
       addTest(g.smp, 'gradation', { legacy: g.legacy, sieves: sieves, hydro: hydro, curve: curve,
-        uscsSymbol: g.uscsSymbol, uscsName: g.uscsName, where: g.where });
+        pan: g.pan, reported: g.reported, uscsSymbol: g.uscsSymbol, uscsName: g.uscsName, where: g.where });
     });
 
     // compaction (long): group by sample + effort
@@ -886,35 +856,35 @@ var LabDiggs = (function () {
       if (mdd != null && g.mdd == null) g.mdd = mdd;
       if (omc != null && g.omc == null) g.omc = omc;
       if (gs != null && g.gs == null) g.gs = gs;
+      ['mould_volume', 'mould_mass', 'rammer_mass', 'rammer_drop', 'layers', 'blows_per_layer']
+        .forEach(function (name) {
+          var v = numField(r, name, { min: 0 });
+          if (v != null && g[name] == null) g[name] = v;
+        });
       var w = numField(r, 'water_content_pct', { min: 0 }), dd = numField(r, 'dry_density', { min: 0 });
-      if (w != null && dd != null) {
-        g.trials.push({ n: numField(r, 'trial'), w: w, dd: dd });
-      } else if (w != null || dd != null) {
-        err(r._where + ': a trial needs both water_content_pct and dry_density');
+      var wet = numField(r, 'wet_density', { min: 0 });
+      var trialRaw = raw(r, ['wet_mass_with_mould', 'tare_mass', 'wet_mass_with_tare', 'dry_mass_with_tare']);
+      if (w == null && dd == null && wet == null && !Object.keys(trialRaw).length) return;
+      if (dd == null && wet == null && !Object.keys(trialRaw).length) {
+        err(r._where + ': a trial needs a dry density, a wet density or its raw masses');
+        return;
       }
+      g.trials.push({ n: numField(r, 'trial'), w: w, dd: dd, wet: wet, raw: trialRaw, where: r._where });
     });
     corder.forEach(function (ck) {
       var g = cgroups[ck];
-      g.trials.sort(function (a, b) { return a.w - b.w; });
-      var fit = compactionSummary(g.trials);
+      g.trials.sort(function (a, b) { return (a.w == null ? 0 : a.w) - (b.w == null ? 0 : b.w); });
       var mdd = g.mdd, omc = g.omc;
-      if (mdd == null || omc == null) {
-        if (fit) {
-          if (mdd == null) mdd = fit.mdd;
-          if (omc == null) omc = fit.omc;
-        } else if (g.trials.length) {
-          var peak = g.trials.reduce(function (a, b) { return b.dd > a.dd ? b : a; });
-          if (mdd == null) mdd = peak.dd;
-          if (omc == null) omc = peak.w;
-          warn(g.where + ': could not fit a compaction curve for ' + g.smp.boring + ' ' + g.smp.id +
-               ' (needs 3 or more trials with a peak inside them); reported the highest trial point instead');
-        }
-      }
-      if (mdd == null && omc == null && !g.trials.length) {
-        err(g.where + ': compaction for ' + g.smp.boring + ' ' + g.smp.id + ' has no trials and no reported maximum');
+      if (mdd == null && omc == null) {
+        err(g.where + ': the compaction test for ' + g.smp.boring + ' ' + g.smp.id +
+            ' needs max_dry_density and optimum_water_content as your laboratory reported them. ' +
+            'The trial points are carried through as raw data, but the maximum is not computed here.');
         return;
       }
-      addTest(g.smp, 'compaction', { effort: g.effort, trials: g.trials, mdd: mdd, omc: omc, gs: g.gs, where: g.where });
+      addTest(g.smp, 'compaction', { effort: g.effort, trials: g.trials, mdd: mdd, omc: omc, gs: g.gs,
+        mould: { volume: g.mould_volume, mass: g.mould_mass, rammerMass: g.rammer_mass,
+                 rammerDrop: g.rammer_drop, layers: g.layers, blows: g.blows_per_layer },
+        where: g.where });
     });
 
     // samples must have a depth
@@ -940,43 +910,65 @@ var LabDiggs = (function () {
       s.tests.sort(function (a, b) { return KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind); });
     });
 
-    // Derived values that need other tests on the same sample
+    // Nothing here computes a result. Raw measurements and reported values
+    // are carried as given; anything missing is reported back to the lab.
+
+    // Atterberg trials belong to the sample's Atterberg test
+    ds.sampleOrder.forEach(function (k) {
+      var smp = ds.samples[k];
+      if (!smp.atterbergTrials || !smp.atterbergTrials.length) return;
+      if (smp.tests.some(function (t) { return t.kind === 'atterberg_limits'; })) return;
+      addTest(smp, 'atterberg_limits', { ll: null, pl: null, pi: null, nonPlastic: false,
+                                         where: smp.atterbergTrials[0].where });
+      smp.tests.sort(function (x, y) { return KIND_ORDER.indexOf(x.kind) - KIND_ORDER.indexOf(y.kind); });
+    });
+
     ds.tests.forEach(function (t) {
       var smp = ds.samples[t.sample];
       var d = t.data;
-      if (t.kind === 'unit_weight') {
-        var w = d.w;
-        if (w == null) {
-          var wc = smp.tests.filter(function (x) { return x.kind === 'water_content'; })[0];
-          if (wc) d.wFromSample = wc.data.w;
-        }
-        var wUse = w != null ? w : d.wFromSample;
-        if (d.dry == null && d.moist != null) {
-          if (wUse != null) d.dryComputed = round(d.moist / (1 + wUse / 100), 1);
-          else warn(d.where + ': no water content for ' + smp.boring + ' ' + smp.id +
-                    ', so dry density was not computed');
-        }
-      }
-      if (t.kind === 'gradation') {
-        var att = smp.tests.filter(function (x) { return x.kind === 'atterberg_limits'; })[0];
-        var plast = null;
-        if (att) plast = att.data.nonPlastic ? { ll: att.data.ll, pi: 0 } : { ll: att.data.ll, pi: att.data.pi };
-        d.summary = gradationSummary(d.curve, d.hydro.length > 0);
-        if (d.summary.fines == null) {
-          warn(d.where + ': gradation for ' + smp.boring + ' ' + smp.id +
-               ' has no No. 200 (0.075 mm) point, so percent fines and USCS were not computed');
-        }
-        if (d.uscsSymbol) {
-          if (USCS_SYMBOLS.indexOf(d.uscsSymbol) < 0) {
-            warn(d.where + ': USCS symbol "' + d.uscsSymbol + '" is not an ASTM D2487 group symbol');
-          }
-          d.uscs = { symbol: d.uscsSymbol, name: d.uscsName || null, reported: true };
-        } else if (d.summary.fines != null) {
-          var u = uscs(d.summary, plast);
-          if (u.symbol) d.uscs = u;
-          else warn(d.where + ': USCS not computed for ' + smp.boring + ' ' + smp.id + ': ' + u.reason);
+      var at = smp.boring + ' ' + smp.id;
+      var need = function (what) {
+        err(d.where + ': the ' + testName(t.kind, d).toLowerCase() + ' test for ' + at +
+            ' has raw measurements but no ' + what + '. This tool moves data into DIGGS and does not ' +
+            'compute results: enter the value your laboratory reported.');
+      };
+
+      if (t.kind === 'water_content' && d.w == null) need('water_content_pct');
+      if (t.kind === 'wash_200' && d.p200 == null) need('percent_passing_200');
+      if (t.kind === 'specific_gravity' && d.gs == null) need('specific_gravity');
+      if (t.kind === 'organic_content' && d.loi == null) need('organic_content_pct');
+      if (t.kind === 'unit_weight' && d.moist == null && d.dry == null) need('moist_density or dry_density');
+
+      if (t.kind === 'atterberg_limits') {
+        d.trials = smp.atterbergTrials || [];
+        if (!d.nonPlastic && (d.ll == null || d.pl == null)) {
+          err(d.where + ': the Atterberg test for ' + at + ' needs liquid_limit and plastic_limit, ' +
+              'or non_plastic = TRUE.' + (d.trials.length
+                ? ' The trials are carried through as raw data; the limits themselves are not computed here.' : ''));
         }
       }
+
+      if (t.kind === 'gradation' && d.uscsSymbol) {
+        if (USCS_SYMBOLS.indexOf(d.uscsSymbol) < 0) {
+          warn(d.where + ': USCS symbol "' + d.uscsSymbol + '" is not an ASTM D2487 group symbol');
+        }
+        d.uscs = { symbol: d.uscsSymbol, name: d.uscsName || null };
+      }
+    });
+
+    // DIGGS needs at least one value in a test: a procedure full of raw
+    // measurements cannot stand on its own.
+    var resultUnits = unitsOf(settings);
+    ds.tests.forEach(function (t) {
+      var smp = ds.samples[t.sample];
+      var rows;
+      try { rows = results(t.kind, t.data, resultUnits); } catch (e) { rows = []; }
+      if (rows.length) return;
+      if (ds.errors.some(function (e) { return e.indexOf(t.data.where) === 0; })) return;
+      err(t.data.where + ': the ' + testName(t.kind, t.data).toLowerCase() + ' test for ' + smp.boring +
+          ' ' + smp.id + ' has no reported result, so it cannot be written. DIGGS needs at least ' +
+          'one value in a test, and raw measurements alone are not enough: add the percentages, ' +
+          'D-values or classification your laboratory reported.');
     });
 
     // borings: apply page entries for borings first seen in results files,
@@ -1139,8 +1131,11 @@ var LabDiggs = (function () {
     return KINDS[kind].name;
   }
 
-  /** (code, propertyName, typeData, uom, value) rows for a test's outcome. */
-  function results(kind, d, densityUnit) {
+  /** (code, propertyName, typeData, uom, value) rows for a test's outcome.
+   *  Only values the lab reported (or that it asked this tool to work out)
+   *  are written; raw measurements go in the procedure instead. */
+  function results(kind, d, units) {
+    var densityUnit = units.density;
     var R = function (code, name, type, uom, value) { return { code: code, name: name, type: type, uom: uom, value: value }; };
     switch (kind) {
       case 'water_content': return [R('water_content_natural', 'Moisture Content', 'double', '%', d.w)];
@@ -1151,22 +1146,27 @@ var LabDiggs = (function () {
           np.push(R('non_plastic', 'Non Plastic', 'boolean', null, 'true'));
           return np;
         }
-        return [R('liquid_limit', 'Liquid Limit', 'integer', null, d.ll),
-                R('plastic_limit', 'Plastic Limit', 'integer', null, d.pl),
-                R('plasticity_index', 'Plasticity Index', 'integer', null, d.pi)];
+        var at = [R('liquid_limit', 'Liquid Limit', 'integer', null, d.ll),
+                  R('plastic_limit', 'Plastic Limit', 'integer', null, d.pl)];
+        if (d.pi != null) at.push(R('plasticity_index', 'Plasticity Index', 'integer', null, d.pi));
+        return at;
       case 'wash_200': return [R('percent_fines', 'Percent Passing No. 200 Sieve', 'double', '%', d.p200)];
       case 'gradation':
-        var g = d.summary, rows = [];
-        if (g.gravel != null) rows.push(R('percent_gravel', 'Percent Gravel', 'double', '%', g.gravel),
-                                        R('percent_sand', 'Percent Sand', 'double', '%', g.sand));
-        if (g.silt != null) rows.push(R('percent_silt', 'Percent Silt', 'double', '%', g.silt),
-                                      R('clay_percent_2_micron', 'Percent Clay (< 2 um)', 'double', '%', g.clay));
-        if (g.fines != null) rows.push(R('percent_fines', 'Percent Fines', 'double', '%', g.fines));
-        [10, 30, 50, 60].forEach(function (p) {
-          if (g['d' + p] != null) rows.push(R('d' + p, 'D' + p, 'double', 'mm', g['d' + p]));
+        var g = d.reported, rows = [];
+        var pct = [['percent_gravel', 'Percent Gravel'], ['percent_sand', 'Percent Sand'],
+                   ['percent_silt', 'Percent Silt'], ['percent_clay', 'Percent Clay (< 2 um)'],
+                   ['percent_fines', 'Percent Fines']];
+        pct.forEach(function (c) {
+          if (g[c[0]] != null) {
+            var code = c[0] === 'percent_clay' ? 'clay_percent_2_micron' : c[0];
+            rows.push(R(code, c[1], 'double', '%', g[c[0]]));
+          }
         });
-        if (g.cu != null) rows.push(R('coef_uniformity', 'Coefficient of Uniformity', 'double', null, g.cu),
-                                    R('coef_curvature', 'Coefficient of Curvature', 'double', null, g.cc));
+        ['d10', 'd30', 'd50', 'd60'].forEach(function (n) {
+          if (g[n] != null) rows.push(R(n, n.toUpperCase(), 'double', 'mm', g[n]));
+        });
+        if (g.cu != null) rows.push(R('coef_uniformity', 'Coefficient of Uniformity', 'double', null, g.cu));
+        if (g.cc != null) rows.push(R('coef_curvature', 'Coefficient of Curvature', 'double', null, g.cc));
         if (d.uscs) {
           rows.push(R('uscs_symbol', 'USCS Group Symbol', 'string', null, d.uscs.symbol));
           if (d.uscs.name) rows.push(R('uscs_group_name', 'USCS Group Name', 'string', null, d.uscs.name));
@@ -1178,8 +1178,7 @@ var LabDiggs = (function () {
         // the published dictionary has no unit_weight code for lab tests;
         // bulk_density carries the moist value
         if (d.moist != null) u.push(R('bulk_density', 'Moist Density', 'double', densityUnit, d.moist));
-        var dry = d.dry != null ? d.dry : d.dryComputed;
-        if (dry != null) u.push(R('dry_density', 'Dry Density', 'double', densityUnit, dry));
+        if (d.dry != null) u.push(R('dry_density', 'Dry Density', 'double', densityUnit, d.dry));
         if (d.w != null) u.push(R('water_content_natural', 'Moisture Content', 'double', '%', d.w));
         return u;
       case 'organic_content': return [R('LOI', 'Organic Content (Loss on Ignition)', 'double', '%', d.loi)];
@@ -1189,10 +1188,10 @@ var LabDiggs = (function () {
         if (d.omc != null) c.push(R('water_content_optimum', 'Optimum Water Content', 'double', '%', d.omc));
         if (d.gs != null) c.push(R('specific_gravity_solids', 'Specific Gravity of Solids', 'double', null, d.gs));
         return c;
-      case 'ph': return [R('pH', 'pH', 'double', null, d.value)];
-      case 'resistivity': return [R('resistivity', 'Minimum Resistivity', 'double', 'ohm.cm', d.value)];
-      case 'sulfate': return [R('sulfate_content', 'Water-Soluble Sulfate', 'double', 'ppm', d.value)];
-      case 'chloride': return [R('chloride_content', 'Water-Soluble Chloride', 'double', 'ppm', d.value)];
+      case 'ph': return d.value == null ? [] : [R('pH', 'pH', 'double', null, d.value)];
+      case 'resistivity': return d.value == null ? [] : [R('resistivity', 'Minimum Resistivity', 'double', 'ohm.cm', d.value)];
+      case 'sulfate': return d.value == null ? [] : [R('sulfate_content', 'Water-Soluble Sulfate', 'double', 'ppm', d.value)];
+      case 'chloride': return d.value == null ? [] : [R('chloride_content', 'Water-Soluble Chloride', 'double', 'ppm', d.value)];
     }
     throw new Error('unknown test kind ' + kind);
   }
@@ -1203,65 +1202,210 @@ var LabDiggs = (function () {
     return fmt(r.value);
   }
 
-  function procedureDetails(kind, d, tid, uid, densityUnit) {
+  /** A named parameter: where DIGGS has no dedicated element for a raw
+   *  measurement, it is carried verbatim as one of these. */
+  function param(name, value, unit) {
+    return E('Parameter', {}, [
+      E('parameterName', {}, name),
+      E('parameterValue', {}, typeof value === 'number' ? fmt(value) : String(value)),
+      unit ? E('parameterUnits', {}, unit) : null
+    ]);
+  }
+
+  function params(wrapper, entries) {
+    return entries.filter(function (e) { return e[1] != null; })
+      .map(function (e) { return E(wrapper, {}, param(e[0], e[1], e[2])); });
+  }
+
+  /** The specimen a lab test was run on, carrying raw masses and dimensions. */
+  function specimenFor(uid, tkey, sampleId, raw, units, opts) {
+    opts = opts || {};
+    var notes = params('otherSpecimenProperty', (opts.notes || []).map(function (e) {
+      return [e[0], raw[e[0]], e[1]];
+    }));
+    var kids = [E('sampleRef', { 'xlink:href': '#' + sampleId })].concat(notes);
+    var pre = [], post = [];
+    if (opts.conditions) {
+      // SpecimenConditions element order
+      [['diameter', units.dim], ['height', units.dim], ['volume', units.vol]].forEach(function (e) {
+        if (raw[e[0]] != null) pre.push([e[0], raw[e[0]], e[1]]);
+      });
+      if (raw.specimen_mass != null) pre.push(['wetWeight', raw.specimen_mass, units.force]);
+      if (raw.specimen_dry_mass != null) post.push(['dryWeight', raw.specimen_dry_mass, units.force]);
+    }
+    function conditions(name, list, id) {
+      if (!list.length) return null;
+      return E(name, {}, E('SpecimenConditions', { 'gml:id': uid(id) },
+        list.map(function (e) { return E(e[0], { uom: e[2] }, fmt(e[1])); })));
+    }
+    kids.push(conditions('conditionPreTest', pre, 'CPRE_' + tkey));
+    kids.push(conditions('conditionPostTest', post, 'CPOST_' + tkey));
+    if (!notes.length && !pre.length && !post.length) return [];
+    return [E('specimen', {}, E('SoilSpecimen', { 'gml:id': uid('SPEC_' + tkey) }, kids))];
+  }
+
+  /**
+   * Procedure content after the test methods, in schema order:
+   * otherTestProperty, specimen, then the test's own elements.
+   */
+  function procedureDetails(kind, d, tid, uid, units, sampleId) {
     var out = [];
+    var raw = d.raw || {};
+    var MASS_NOTES = [['tare_mass', units.mass], ['wet_mass_with_tare', units.mass],
+                      ['dry_mass_with_tare', units.mass]];
+
     if (kind === 'water_content') {
+      out = out.concat(specimenFor(uid, tid, sampleId, raw, units, { notes: MASS_NOTES }));
       if (d.dryingTemp != null) out.push(E('dryingTemperature', { uom: 'degC' }, fmt(d.dryingTemp)));
+      if (d.dryingTime != null) out.push(E('dryingTime', { uom: 'h' }, fmt(d.dryingTime)));
+
     } else if (kind === 'atterberg_limits') {
+      if (d.ovenDried != null) out.push(E('ovenDriedBeforeTest', {}, d.ovenDried ? 'true' : 'false'));
       var prep = String(d.prep || '').toLowerCase().trim();
       if (prep === 'wet' || prep === 'dry') out.push(E('sieveProcedure', {}, prep));
+      if (d.retainedNo40) out.push(E('percentRetainedNo40', {}, d.retainedNo40));
       var m = String(d.llMethod || '').toLowerCase().replace(/[^a-z]/g, '');
       if (m === 'multipoint' || m === 'onepoint' || m === 'singlepoint') {
         out.push(E('multiPointLLmethod', {}, m === 'multipoint' ? 'true' : 'false'));
       }
+      // trials, in schema order: casagrande, fall cone, plastic limit
+      var trials = d.trials || [];
+      var TRIALS = [
+        ['casagrande', 'casagrandeTrial', 'CasagrandeTrial', 'CAS'],
+        ['fall_cone', 'fallConeTrial', 'FallConeTrial', 'CONE'],
+        ['plastic_limit', 'plasticLimitTrial', 'PlasticLimitTrial', 'PLT']
+      ];
+      TRIALS.forEach(function (spec) {
+        trials.filter(function (t) { return t.type === spec[0]; }).forEach(function (t, i) {
+          var kids = params('otherProperty', MASS_NOTES.map(function (e) { return [e[0], t.raw[e[0]], e[1]]; }));
+          if (t.n != null) kids.push(E('trialNo', {}, String(Math.round(t.n))));
+          if (spec[0] === 'casagrande') kids.push(E('blowCount', {}, String(Math.round(t.blows))));
+          if (spec[0] === 'fall_cone') kids.push(E('penetration', { uom: 'mm' }, fmt(t.penetration)));
+          kids.push(E('waterContent', { uom: '%' }, fmt(t.w)));
+          out.push(E(spec[1], {}, E(spec[2], { 'gml:id': uid(spec[3] + '_' + tid + '_' + (i + 1)) }, kids)));
+        });
+      });
+
     } else if (kind === 'wash_200') {
-      out.push(E('sieveAnalysis', {}, E('SieveAnalysis', { 'gml:id': uid('SV_' + tid) }, [
-        E('coarseFractionWetSieved', {}, 'true'),
-        E('gradingData', {}, E('Grading', { 'gml:id': uid('GR_' + tid + '_1') }, [
-          E('particleSize', { uom: 'mm' }, '0.075'),
-          E('sieveNumber', {}, 'No. 200'),
-          E('percentPassing', { uom: '%' }, fmt(d.p200))
-        ]))
+      var wraw = d.raw || {};
+      var wkids = [E('coarseFractionWetSieved', {}, 'true')];
+      wkids = wkids.concat(params('otherSieveAnalysisProperty', [['total_dry_mass', wraw.total_dry_mass, units.mass]]));
+      wkids.push(E('gradingData', {}, E('Grading', { 'gml:id': uid('GR_' + tid + '_1') }, [
+        E('particleSize', { uom: 'mm' }, '0.075'),
+        E('sieveNumber', {}, 'No. 200'),
+        d.p200 != null ? E('percentPassing', { uom: '%' }, fmt(d.p200)) : null,
+        wraw.mass_retained_after_wash != null
+          ? E('weightRetained', { uom: units.force }, fmt(wraw.mass_retained_after_wash)) : null
       ])));
+      out.push(E('sieveAnalysis', {}, E('SieveAnalysis', { 'gml:id': uid('SV_' + tid) }, wkids)));
+
     } else if (kind === 'gradation') {
       var n = 0;
-      if (d.sieves.length) {
+      if (d.sieves.length || d.pan || d.reported.total_dry_mass != null) {
         var rows = [E('coarseFractionWetSieved', {}, 'true')];
+        rows = rows.concat(params('otherSieveAnalysisProperty',
+          [['total_dry_mass', d.reported.total_dry_mass, units.mass]]));
         d.sieves.forEach(function (p) {
           n++;
           rows.push(E('gradingData', {}, E('Grading', { 'gml:id': uid('GR_' + tid + '_' + n) }, [
             E('particleSize', { uom: 'mm' }, fmt(p.size)),
             p.sieve ? E('sieveNumber', {}, p.sieve) : null,
-            E('percentPassing', { uom: '%' }, fmt(p.pass))
+            p.pass != null ? E('percentPassing', { uom: '%' }, fmt(p.pass)) : null,
+            p.retainedPct != null ? E('percentRetained', { uom: '%' }, fmt(p.retainedPct)) : null,
+            p.retainedMass != null ? E('weightRetained', { uom: units.force }, fmt(p.retainedMass)) : null
           ])));
         });
+        var pan = d.pan, panMass = d.reported.pan_mass_retained;
+        if (pan || panMass != null) {
+          rows.push(E('panData', {}, E('PanData', { 'gml:id': uid('PAN_' + tid) }, [
+            pan && pan.retainedPct != null ? E('percentRetained', { uom: '%' }, fmt(pan.retainedPct)) : null,
+            (pan && pan.retainedMass != null) || panMass != null
+              ? E('weightRetained', { uom: units.force }, fmt(pan && pan.retainedMass != null ? pan.retainedMass : panMass))
+              : null
+          ])));
+        }
         out.push(E('sieveAnalysis', {}, E('SieveAnalysis', { 'gml:id': uid('SV_' + tid) }, rows)));
       }
       if (d.hydro.length) {
-        var sed = [];
-        d.hydro.forEach(function (p) {
+        var hyd = [];
+        var odd = [];
+        d.hydro.forEach(function (p, i) {
           n++;
-          sed.push(E('sedimentationData', {}, E('Sedimentation', { 'gml:id': uid('SED_' + tid + '_' + n) }, [
-            E('particleDiameter', { uom: 'mm' }, fmt(p.size)),
-            E('percentPassing', { uom: '%' }, fmt(p.pass))
+          var rd = p.reading;
+          // hydrometerReading is a density: 152H readings (g/L) fit, a 151H
+          // specific-gravity reading does not, so that is carried as a note
+          var asDensity = rd.reading != null && rd.reading >= 2;
+          if (rd.reading != null && !asDensity) odd.push(['hydrometer_reading_' + (i + 1), rd.reading, null]);
+          hyd.push(E('sedimentationData', {}, E('Sedimentation', { 'gml:id': uid('SED_' + tid + '_' + n) }, [
+            rd.elapsed != null ? E('elapsedTime', { uom: 'min' }, fmt(rd.elapsed)) : null,
+            asDensity ? E('hydrometerReading', { uom: 'g/L' }, fmt(rd.reading)) : null,
+            rd.temperature != null ? E('temperature', { uom: 'degC' }, fmt(rd.temperature)) : null,
+            rd.correction != null ? E('compositeCorrection', { uom: 'g/L' }, fmt(rd.correction)) : null,
+            rd.corrected != null ? E('correctedReading', { uom: 'g/L' }, fmt(rd.corrected)) : null,
+            rd.effectiveLength != null ? E('effectiveLength', { uom: units.dim }, fmt(rd.effectiveLength)) : null,
+            p.size != null ? E('particleDiameter', { uom: 'mm' }, fmt(p.size)) : null,
+            p.pass != null ? E('percentPassing', { uom: '%' }, fmt(p.pass)) : null
           ])));
         });
-        out.push(E('hydrometer', {}, E('Hydrometer', { 'gml:id': uid('HY_' + tid) }, sed)));
+        out.push(E('hydrometer', {}, E('Hydrometer', { 'gml:id': uid('HY_' + tid) },
+          params('otherHydrometerProperty', odd).concat(hyd))));
       }
+
     } else if (kind === 'specific_gravity') {
-      out.push(E('waterTemperature', { uom: 'degC' }, fmt(d.waterTemp)));
+      out = out.concat(specimenFor(uid, tid, sampleId, raw, units, {
+        notes: [['mass_dry_soil', units.mass], ['mass_pyc_water', units.mass], ['mass_pyc_water_soil', units.mass]]
+      }));
+      out.push(E('waterTemperature', { uom: 'degC' }, fmt(d.waterTemp == null ? 20 : d.waterTemp)));
+      if (d.soilTemp != null) out.push(E('temperatureWaterAndSoil', { uom: 'degC' }, fmt(d.soilTemp)));
+      if (d.k != null) out.push(E('correctionFactorForWaterTemperature', {}, fmt(d.k)));
+
+    } else if (kind === 'unit_weight') {
+      out = out.concat(specimenFor(uid, tid, sampleId, raw, units, { conditions: true }));
+
     } else if (kind === 'organic_content') {
-      out.push(E('ignitionTemperature', { uom: 'degC' }, fmt(d.ignitionTemp)));
+      out = out.concat(specimenFor(uid, tid, sampleId, raw, units, {
+        notes: [['mass_dry_before_ignition', units.mass], ['mass_ash', units.mass]]
+      }));
+      if (d.dryingTemp != null) out.push(E('dryingTemperature', { uom: 'degC' }, fmt(d.dryingTemp)));
+      out.push(E('ignitionTemperature', { uom: 'degC' }, fmt(d.ignitionTemp == null ? 440 : d.ignitionTemp)));
+      if (d.ignitionTime != null) out.push(E('ignitionTime', { uom: 'h' }, fmt(d.ignitionTime)));
+
     } else if (kind === 'compaction') {
+      var mould = d.mould || {};
+      out = out.concat(params('otherTestProperty', [['mould_mass', mould.mass, units.mass]]));
       out.push(E('compactionTestType', {}, d.effort === 'modified' ? 'Modified Proctor' : 'Proctor'));
+      if (mould.volume != null) out.push(E('mouldVolume', { uom: units.vol }, fmt(mould.volume)));
+      if (mould.rammerMass != null) out.push(E('rammerMass', { uom: units.mass }, fmt(mould.rammerMass)));
+      if (mould.rammerDrop != null) out.push(E('rammerDrop', { uom: units.dim }, fmt(mould.rammerDrop)));
+      if (mould.layers != null) out.push(E('numberOfLayers', {}, String(Math.round(mould.layers))));
+      if (mould.blows != null) out.push(E('blowsPerLayer', {}, String(Math.round(mould.blows))));
       d.trials.forEach(function (t, i) {
         var no = t.n != null && t.n > 0 && Math.round(t.n) === t.n ? t.n : i + 1;
+        var notes = params('otherTrialProperty', [
+          ['wet_mass_with_mould', t.raw.wet_mass_with_mould, units.mass],
+          ['tare_mass', t.raw.tare_mass, units.mass],
+          ['wet_mass_with_tare', t.raw.wet_mass_with_tare, units.mass],
+          ['dry_mass_with_tare', t.raw.dry_mass_with_tare, units.mass]
+        ]);
         out.push(E('trial', {}, E('LabCompactionTestTrial', { 'gml:id': uid('TRL_' + tid + '_' + (i + 1)) }, [
           E('trialNo', {}, String(no)),
-          E('waterContent', { uom: '%' }, fmt(t.w)),
-          E('dryDensity', { uom: densityUnit }, fmt(t.dd))
-        ])));
+          t.w != null ? E('waterContent', { uom: '%' }, fmt(t.w)) : null,
+          t.wet != null ? E('wetDensity', { uom: units.density }, fmt(t.wet)) : null,
+          t.dd != null ? E('dryDensity', { uom: units.density }, fmt(t.dd)) : null
+        ].concat(notes))));
       });
+
+    } else if (kind === 'ph') {
+      out = out.concat(params('otherTestProperty', [['ph_temperature_c', d.phTemp, 'degC']]));
+
+    } else if (kind === 'resistivity') {
+      out = out.concat(params('otherTestProperty', [
+        ['resistance_ohm', raw.resistance_ohm, 'ohm'],
+        ['soil_box_constant', raw.soil_box_constant, units.dim]
+      ]));
+      if (d.electrodeType) out.push(E('electrodeType', {}, d.electrodeType));
+      if (raw.electrode_spacing != null) out.push(E('electrodeLength', { uom: units.dim }, fmt(raw.electrode_spacing)));
+      if (d.waterResistivity != null) out.push(E('waterResistivity', { uom: 'ohm.cm' }, fmt(d.waterResistivity)));
     }
     return out;
   }
@@ -1290,7 +1434,7 @@ var LabDiggs = (function () {
    * their tests point at the existing one.
    */
   function labFragments(ds, ctx) {
-    var uid = ctx.uid, projectId = ctx.projectId, densityUnit = ctx.densityUnit;
+    var uid = ctx.uid, projectId = ctx.projectId;
     var activities = [], samples = [], measurements = [];
     ds.sampleOrder.forEach(function (k) {
       var s = ds.samples[k];
@@ -1331,7 +1475,7 @@ var LabDiggs = (function () {
 
       s.tests.forEach(function (t) {
         var d = t.data;
-        var rows = results(t.kind, d, densityUnit);
+        var rows = results(t.kind, d, ctx.units);
         if (!rows.length) return;
         var tid = uid('T_' + s.boring + '_' + s.id + '_' + t.kind);
         // child ids derive from the test id; drop the merge prefix so it is not repeated
@@ -1367,15 +1511,11 @@ var LabDiggs = (function () {
             ]))
           ])),
           E('procedure', {}, E(KINDS[t.kind].proc, { 'gml:id': uid('PR_' + tkey) },
-            specs.concat(procedureDetails(t.kind, d, tkey, uid, densityUnit))))
+            specs.concat(procedureDetails(t.kind, d, tkey, uid, ctx.units, smpId))))
         ])));
       });
     });
     return { activities: activities, samples: samples, measurements: measurements };
-  }
-
-  function densityUnitOf(settings) {
-    return DENSITY_UNITS[settings.densityUnit] ? settings.densityUnit : 'lbm/ft3';
   }
 
   /** Build a complete DIGGS 3.0 file for a dataset (no starting DIGGS file). */
@@ -1450,7 +1590,7 @@ var LabDiggs = (function () {
       root.push(E('samplingFeature', {}, E('Borehole', { 'gml:id': bhId }, kids)));
     });
 
-    var frag = labFragments(ds, { uid: uid, projectId: projectId, bh: bh, densityUnit: densityUnitOf(settings) });
+    var frag = labFragments(ds, { uid: uid, projectId: projectId, bh: bh, units: unitsOf(settings) });
     root = root.concat(frag.activities, frag.samples, frag.measurements);
     var doc = E('Diggs', {
       xmlns: NS_DIGGS,
@@ -1815,7 +1955,7 @@ var LabDiggs = (function () {
 
     var bh = {};
     info.features.forEach(function (f) { bh[f.name] = { id: f.id, lrs: f.lrs }; });
-    var frag = labFragments(ds, { uid: uid, projectId: info.projectId, bh: bh, densityUnit: densityUnitOf(settings) });
+    var frag = labFragments(ds, { uid: uid, projectId: info.projectId, bh: bh, units: unitsOf(settings) });
 
     // indentation used by the file for root children
     var indentMatch = /\n([ \t]+)</.exec(text.slice(root.contentStart, root.contentStart + 400));
@@ -1896,7 +2036,8 @@ var LabDiggs = (function () {
       var label = testName(t.kind, t.data);
       byKind[label] = (byKind[label] || 0) + 1;
     });
-    return { borings: ds.boringOrder.length, samples: ds.sampleOrder.length, tests: ds.tests.length, byKind: byKind };
+    return { borings: ds.boringOrder.length, samples: ds.sampleOrder.length,
+             tests: ds.tests.length, byKind: byKind };
   }
 
   // ---------------------------------------------------------------------
@@ -2650,8 +2791,6 @@ var LabDiggs = (function () {
     DENSITY_UNITS: DENSITY_UNITS, USCS_SYMBOLS: USCS_SYMBOLS,
     parseCSV: parseCSV, toCSV: toCSV, templateCSV: templateCSV, detectTemplate: detectTemplate,
     normHeader: normHeader, sieveSize: sieveSize, num: num, fmt: fmt, normDate: normDate,
-    dValue: dValue, passingAt: passingAt, finesSymbol: finesSymbol, uscs: uscs,
-    gradationSummary: gradationSummary, compactionSummary: compactionSummary,
     parseXml: parseXml, readDiggs: readDiggs, describeSource: describeSource, sourceSeed: sourceSeed,
     mergeDiggs: mergeDiggs, nameKey: nameKey,
     buildDataset: buildDataset, generateDiggs: generateDiggs, summarize: summarize,

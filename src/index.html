@@ -28,7 +28,7 @@
 
   <section class="card" id="step-source">
     <h2><span class="num">1</span>Start from the project&rsquo;s DIGGS file <span class="tag">recommended</span></h2>
-    <p>Ask the engineer or driller for the project&rsquo;s DIGGS file with the proposed or as-drilled borings. The borings, their locations and any listed samples come from that file, so you only enter test results, and your results are added to that same file.</p>
+    <p>Ask the engineer or driller for the project&rsquo;s DIGGS file with the proposed or as-drilled borings. The borings, their locations and any listed samples come from that file, so you only enter test results and the raw measurements behind them, and your results are added to that same file.</p>
     <div id="source-drop" class="dropzone" tabindex="0" role="button" aria-label="Choose the project DIGGS file">
       <strong>Drop the project&rsquo;s DIGGS file here</strong> or click to choose it
       <span class="note">.xml or .diggs, DIGGS 3. Read on this computer; nothing is uploaded.</span>
@@ -104,6 +104,18 @@
       </label>
     </div>
     <p class="note">Values are written exactly as entered, labelled with these units. Water content, limits, percent passing and organic content are percent. Particle sizes are mm. Resistivity is ohm-cm. Sulfate and chloride are ppm.</p>
+    <div class="grid">
+      <label>Raw mass unit
+        <select id="massUnit"></select>
+      </label>
+      <label>Raw dimension unit
+        <select id="dimensionUnit"></select>
+      </label>
+      <label>Raw volume unit
+        <select id="volumeUnit"></select>
+      </label>
+    </div>
+    <p class="note"><strong>This tool moves your data into DIGGS; it does not calculate.</strong> Reported results are written as your laboratory reported them, and the raw measurements behind them are carried alongside. Nothing is computed, corrected or rounded here, so a result your laboratory did not report is listed as something to add.</p>
   </section>
 
   <section class="card" id="step-files">

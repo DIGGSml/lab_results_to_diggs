@@ -263,7 +263,8 @@
   }
 
   // ------------------------------------------------------------------ settings
-  var SETTING_IDS = ['projectName', 'projectNumber', 'client', 'labName', 'depthUnit', 'densityUnit'];
+  var SETTING_IDS = ['projectName', 'projectNumber', 'client', 'labName', 'depthUnit', 'densityUnit',
+                     'massUnit', 'dimensionUnit', 'volumeUnit'];
 
   function radioValue(name, fallback) {
     var el = document.querySelector('input[name=' + name + ']:checked');
@@ -294,6 +295,15 @@
     Object.keys(L.DENSITY_UNITS).forEach(function (u) {
       sel.appendChild(h('option', { value: u, text: L.DENSITY_UNITS[u] }));
     });
+    // units for the raw measurements, from the same list the workbook offers
+    [['mass_unit', 'massUnit'], ['dimension_unit', 'dimensionUnit'], ['volume_unit', 'volumeUnit']]
+      .forEach(function (pair) {
+        var field = L.PROJECT.fields.filter(function (f) { return f.key === pair[0]; })[0];
+        if (!field) return;
+        var box = $(pair[1]);
+        field.choices.forEach(function (u) { box.appendChild(h('option', { value: u, text: u })); });
+        box.value = field.example;
+      });
     try {
       var saved = JSON.parse(recall(SETTINGS_KEY) || '{}');
       SETTING_IDS.forEach(function (id) { if (saved[id] != null) $(id).value = saved[id]; });

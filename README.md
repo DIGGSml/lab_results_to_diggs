@@ -49,15 +49,16 @@ business-rule checks. *Build a DIGGS File Inspector page* wraps it in the
 
 | Sheet | Results | Method |
 |---|---|---|
-| Water Content | Water content | ASTM D2216 |
+| Water Content | Water content, with the tare, wet and dry masses | ASTM D2216 |
 | Atterberg Limits | Liquid limit, plastic limit, plasticity index, non-plastic | ASTM D4318 |
+| Atterberg Trials | Raw trials: blow counts, trial water contents, cone penetration | ASTM D4318 |
 | Wash 200 | Percent passing the No. 200 sieve | ASTM D1140 |
-| Gradation | Sieve and hydrometer points; computed gravel, sand, silt and clay, D10/D30/D50/D60, Cu, Cc and USCS | ASTM D6913, D7928 or D422; D2487 |
-| Specific Gravity | Specific gravity of soil solids | ASTM D854 |
-| Unit Weight | Moist and dry density | ASTM D7263 |
+| Gradation | Sieve and hydrometer points, with masses retained and hydrometer readings; the reported gravel, sand, silt and clay, D-values, Cu, Cc and USCS | ASTM D6913, D7928 or D422; D2487 |
+| Specific Gravity | Specific gravity of soil solids, with the pycnometer masses and temperature | ASTM D854 |
+| Unit Weight | Moist and dry density, with specimen mass and dimensions | ASTM D7263 |
 | Organic Content | Organic content (loss on ignition) | ASTM D2974 |
-| Compaction | Standard or Modified Proctor trial points; fitted maximum dry density and optimum water content | ASTM D698, D1557 |
-| Corrosion | pH, minimum resistivity, water-soluble sulfate and chloride | ASTM G51, G187, C1580, D4327 |
+| Compaction | Standard or Modified Proctor trial points with mould and rammer details; the reported maximum dry density and optimum water content | ASTM D698, D1557 |
+| Corrosion | pH, minimum resistivity, water-soluble sulfate and chloride, with the soil box reading | ASTM G51, G187, C1580, D4327 |
 
 Every results row carries `boring_id`, `sample_id`, `top_depth`,
 `bottom_depth` and `sample_type`, so rows on different sheets that name the
@@ -67,6 +68,30 @@ DIGGS file, every boring needs a latitude and longitude because DIGGS
 requires a location for each sampling feature; ground elevation is strongly
 recommended, since without it the business-rule check reports one geometry
 error per boring.
+
+## It translates, it does not calculate
+
+The tool moves a laboratory's data into DIGGS. Reported results are written
+exactly as entered, and the raw measurements behind them are carried into the
+test procedure, where DIGGS has a place for them:
+
+- specimen masses and dimensions on a `SoilSpecimen` (tare, wet and dry
+  masses as named parameters; diameter, height, volume and specimen weights
+  as specimen conditions),
+- Atterberg trials as `CasagrandeTrial`, `PlasticLimitTrial` and
+  `FallConeTrial` records with their blow counts and water contents,
+- masses retained per sieve on `Grading`, the pan on `PanData`, and
+  hydrometer readings (elapsed time, reading, temperature, correction,
+  effective length) on `Sedimentation`,
+- Proctor mould volume, rammer mass and drop, layers and blows on the test,
+  with wet density and the raw masses on each trial,
+- pycnometer masses, soil box readings and anything else DIGGS has no element
+  for as named parameters, verbatim.
+
+Nothing is computed, corrected or rounded. A value the laboratory did not
+report is listed as something to add, never filled in: DIGGS needs at least
+one reported result in a test, so raw measurements alone are refused with a
+message naming what is missing.
 
 ## DIGGS encoding
 
@@ -92,7 +117,7 @@ certification challenge:
   code.
 
 Values are written as entered, labelled with the units chosen on the Project
-sheet (or, when merging, with the depth unit of each borehole in the DIGGS
+sheet (including the mass, dimension and volume units for raw measurements) (or, when merging, with the depth unit of each borehole in the DIGGS
 file; a workbook that says otherwise is refused). Output from this tool,
 written new or merged into a field DIGGS file, passes Geosetta's full Lab
 Standard export certification (schema, codelists, business rules and data

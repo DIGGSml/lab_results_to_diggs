@@ -62,7 +62,8 @@ const entries = L.workbookEntries('example.xlsx', example);
 test('reads its own workbook back, sheet by sheet', () => {
   const sheets = entries.map((e) => e.detectName);
   assert.deepStrictEqual(sheets, ['project', 'borings', 'samples', 'water_content', 'atterberg_limits',
-    'wash_200', 'gradation', 'specific_gravity', 'unit_weight', 'organic_content', 'compaction', 'corrosion']);
+    'atterberg_trials', 'wash_200', 'gradation', 'specific_gravity', 'unit_weight', 'organic_content',
+    'compaction', 'corrosion']);
 });
 const project = L.projectSettings(L.fileRows(entries[0]));
 test('Project sheet gives the settings', () => {
@@ -180,26 +181,37 @@ test('prepared workbook lists the file\'s borings and samples', () => {
     .includes('<definedName name="SampleIds">'));
 });
 
-console.log('derived values');
-test('Proctor vertex (parabola through the peak)', () => {
-  const t = [[11.8, 109.6], [13.9, 112.8], [15.8, 114.1], [17.9, 112.3], [20.1, 108.7]].map(([w, dd]) => ({ w, dd }));
-  assert.deepStrictEqual(L.compactionSummary(t), { omc: 15.7, mdd: 114.1 });
-});
-test('USCS per ASTM D2487', () => {
-  const cases = [
-    [{ gravel: 0, sand: 25.4, fines: 74.6 }, { ll: 32, pi: 13 }, 'CL', 'Lean clay with sand'],
-    [{ gravel: 10, sand: 82, fines: 8, cu: 7, cc: 1.5 }, { ll: 30, pi: 12 }, 'SW-SC', 'Well-graded sand with clay'],
-    [{ gravel: 60, sand: 32, fines: 8, cu: 2, cc: 0.8 }, { ll: 40, pi: 2 }, 'GP-GM', 'Poorly graded gravel with silt and sand'],
-    [{ gravel: 10, sand: 60, fines: 30 }, { ll: 25, pi: 6 }, 'SC-SM', 'Silty, clayey sand'],
-    [{ gravel: 5, sand: 20, fines: 75 }, { ll: 60, pi: 20 }, 'MH', 'Elastic silt with sand'],
-  ];
-  for (const [summary, plast, symbol, name] of cases) {
-    const u = L.uscs(summary, plast);
-    assert.strictEqual(u.symbol, symbol);
-    assert.strictEqual(u.name, name);
+console.log('raw measurements');
+const rawFiles = L.TEMPLATES.map((t) => ({ name: t.id + '.csv', text: L.templateCSV(t.id, true) }));
+const rawProject = L.projectSettings(L.parseCSV(L.templateCSV('project', true)));
+test('the example rows carry raw measurements and reported results', () => {
+  const ds = L.buildDataset(rawFiles, Object.assign({}, rawProject));
+  assert.deepStrictEqual(ds.errors, []);
+  assert.deepStrictEqual(ds.warnings, []);
+  const xml = L.generateDiggs(ds, Object.assign({ projectName: 'Raw' }, rawProject));
+  for (const needle of ['<SoilSpecimen', '<parameterName>tare_mass</parameterName>', '<CasagrandeTrial',
+                        '<PlasticLimitTrial', '<blowCount>', '<weightRetained uom="gf">', '<PanData',
+                        '<hydrometerReading uom="g/L">', '<elapsedTime uom="min">', '<diameter uom="mm">',
+                        '<wetWeight uom="gf">', '<mouldVolume uom="cm3">', '<wetDensity uom="lbm/ft3">',
+                        '<parameterName>resistance_ohm</parameterName>']) {
+    assert.ok(xml.includes(needle), needle);
   }
-  assert.ok(L.uscs({ gravel: 0, sand: 90, fines: 10 }, null).reason);
 });
+test('nothing is computed: a missing result is reported, not filled in', () => {
+  const key = 'boring_id,sample_id,top_depth,bottom_depth,sample_type,';
+  const ds = L.buildDataset([
+    { name: 'water_content.csv', text: key + 'water_content_pct,tare_mass,wet_mass_with_tare,dry_mass_with_tare\n' +
+        'B-1,S-1,2.5,4,,,15.6,128.4,116.0\n' },
+    { name: 'atterberg_trials.csv', text: key + 'trial_type,blows,water_content_pct\n' +
+        'B-1,S-2,5,6.5,,casagrande,25,32.1\nB-1,S-2,5,6.5,,plastic_limit,,19.0\n' }
+  ], {});
+  const all = ds.errors.join(' | ');
+  assert.ok(all.includes('has raw measurements but no water_content_pct'), all);
+  assert.ok(all.includes('needs liquid_limit and plastic_limit'), all);
+  assert.ok(!('uscs' in L) && !('gradationSummary' in L) && !('compactionSummary' in L));
+});
+
+console.log('other checks');
 test('sieve designations', () => {
   assert.deepStrictEqual([L.sieveSize('#200'), L.sieveSize('3/4"'), L.sieveSize('No 10')], [0.075, 19, 2]);
 });

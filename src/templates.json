@@ -160,6 +160,30 @@
      "name": "drying_temperature_c",
      "required": false,
      "doc": "Oven temperature, degC"
+    },
+    {
+     "name": "tare_mass",
+     "required": false,
+     "doc": "Mass of the empty container. Raw measurement, in the mass unit on the Project sheet.",
+     "min": 0
+    },
+    {
+     "name": "wet_mass_with_tare",
+     "required": false,
+     "doc": "Mass of wet soil plus container. Raw measurement, in the mass unit on the Project sheet.",
+     "min": 0
+    },
+    {
+     "name": "dry_mass_with_tare",
+     "required": false,
+     "doc": "Mass of oven-dry soil plus container. Raw measurement, in the mass unit on the Project sheet.",
+     "min": 0
+    },
+    {
+     "name": "drying_time_h",
+     "required": false,
+     "doc": "Time held at the drying temperature, hours.",
+     "min": 0
     }
    ],
    "examples": [
@@ -170,7 +194,11 @@
      "4",
      "split spoon",
      "12.4",
-     "110"
+     "110",
+     "15.62",
+     "128.44",
+     "115.99",
+     "16"
     ],
     [
      "B-1",
@@ -179,6 +207,10 @@
      "6.5",
      "split spoon",
      "18.9",
+     "",
+     "15.48",
+     "141.30",
+     "121.46",
      ""
     ]
    ]
@@ -239,6 +271,21 @@
       "one_point"
      ],
      "strict": true
+    },
+    {
+     "name": "oven_dried_before_test",
+     "required": false,
+     "doc": "TRUE if the sample was oven dried before testing.",
+     "choices": [
+      "TRUE",
+      "FALSE"
+     ],
+     "strict": true
+    },
+    {
+     "name": "percent_retained_no40",
+     "required": false,
+     "doc": "Estimated percent retained on the No. 40 sieve."
     }
    ],
    "examples": [
@@ -253,7 +300,9 @@
      "",
      "",
      "wet",
-     "multipoint"
+     "multipoint",
+     "FALSE",
+     "8"
     ],
     [
      "B-1",
@@ -265,6 +314,149 @@
      "NP",
      "",
      "TRUE",
+     "",
+     "",
+     "",
+     ""
+    ]
+   ]
+  },
+  {
+   "id": "atterberg_trials",
+   "title": "Atterberg trials (raw)",
+   "sheet": "Atterberg Trials",
+   "astm": "ASTM D4318",
+   "optional": true,
+   "keyed": true,
+   "notes": "Raw multi-point Atterberg data: one row per trial. Carried into the test procedure as Casagrande, plastic limit or fall cone trials.",
+   "columns": [
+    {
+     "name": "trial_type",
+     "required": true,
+     "doc": "casagrande (liquid limit), plastic_limit, or fall_cone",
+     "choices": [
+      "casagrande",
+      "plastic_limit",
+      "fall_cone"
+     ],
+     "strict": true
+    },
+    {
+     "name": "trial",
+     "required": false,
+     "doc": "Trial number.",
+     "min": 1
+    },
+    {
+     "name": "blows",
+     "required": false,
+     "doc": "Casagrande rows: blow count.",
+     "min": 1
+    },
+    {
+     "name": "water_content_pct",
+     "required": false,
+     "doc": "Water content of this trial, %.",
+     "min": 0
+    },
+    {
+     "name": "penetration_mm",
+     "required": false,
+     "doc": "Fall cone rows: cone penetration, mm.",
+     "min": 0
+    },
+    {
+     "name": "tare_mass",
+     "required": false,
+     "doc": "Mass of the empty container. Raw measurement, in the mass unit on the Project sheet.",
+     "min": 0
+    },
+    {
+     "name": "wet_mass_with_tare",
+     "required": false,
+     "doc": "Mass of wet soil plus container. Raw measurement, in the mass unit on the Project sheet.",
+     "min": 0
+    },
+    {
+     "name": "dry_mass_with_tare",
+     "required": false,
+     "doc": "Mass of oven-dry soil plus container. Raw measurement, in the mass unit on the Project sheet.",
+     "min": 0
+    }
+   ],
+   "examples": [
+    [
+     "B-1",
+     "S-2",
+     "5",
+     "6.5",
+     "split spoon",
+     "casagrande",
+     "1",
+     "35",
+     "30.6",
+     "",
+     "15.31",
+     "38.22",
+     "32.85"
+    ],
+    [
+     "B-1",
+     "S-2",
+     "5",
+     "6.5",
+     "split spoon",
+     "casagrande",
+     "2",
+     "25",
+     "32.1",
+     "",
+     "",
+     "",
+     ""
+    ],
+    [
+     "B-1",
+     "S-2",
+     "5",
+     "6.5",
+     "split spoon",
+     "casagrande",
+     "3",
+     "18",
+     "33.8",
+     "",
+     "",
+     "",
+     ""
+    ],
+    [
+     "B-1",
+     "S-2",
+     "5",
+     "6.5",
+     "split spoon",
+     "plastic_limit",
+     "1",
+     "",
+     "19.2",
+     "",
+     "",
+     "",
+     ""
+    ],
+    [
+     "B-1",
+     "S-2",
+     "5",
+     "6.5",
+     "split spoon",
+     "plastic_limit",
+     "2",
+     "",
+     "18.8",
+     "",
+     "",
      "",
      ""
     ]
@@ -285,6 +477,18 @@
      "doc": "Percent passing the No. 200 sieve",
      "min": 0,
      "max": 100
+    },
+    {
+     "name": "total_dry_mass",
+     "required": false,
+     "doc": "Dry mass of the specimen before washing. Raw measurement, in the mass unit on the Project sheet.",
+     "min": 0
+    },
+    {
+     "name": "mass_retained_after_wash",
+     "required": false,
+     "doc": "Dry mass retained on the No. 200 sieve after washing. Raw measurement, in the mass unit on the Project sheet.",
+     "min": 0
     }
    ],
    "examples": [
@@ -294,7 +498,9 @@
      "2.5",
      "4",
      "split spoon",
-     "34.0"
+     "34.0",
+     "486.2",
+     "320.9"
     ]
    ]
   },
@@ -320,10 +526,11 @@
     {
      "name": "method",
      "required": true,
-     "doc": "sieve or hydrometer",
+     "doc": "sieve, hydrometer, or pan for the material in the pan",
      "choices": [
       "sieve",
-      "hydrometer"
+      "hydrometer",
+      "pan"
      ],
      "strict": true
     },
@@ -355,13 +562,13 @@
     {
      "name": "particle_size_mm",
      "required": false,
-     "doc": "Opening or particle diameter, mm (required for hydrometer rows)",
+     "doc": "Opening or particle diameter, mm  Optional when raw masses or readings are given instead.",
      "min": 0
     },
     {
      "name": "percent_passing",
-     "required": true,
-     "doc": "Percent passing / finer",
+     "required": false,
+     "doc": "Percent passing / finer Optional when raw masses or readings are given instead.",
      "min": 0,
      "max": 100
     },
@@ -377,6 +584,134 @@
      "doc": "Optional reported USCS group name",
      "text": true,
      "width": 30
+    },
+    {
+     "name": "mass_retained",
+     "required": false,
+     "doc": "Mass retained on this sieve. Raw measurement, in the mass unit on the Project sheet.",
+     "min": 0
+    },
+    {
+     "name": "percent_retained",
+     "required": false,
+     "doc": "Percent retained on this sieve.",
+     "min": 0,
+     "max": 100
+    },
+    {
+     "name": "elapsed_min",
+     "required": false,
+     "doc": "Hydrometer rows: elapsed time since the start of the test, minutes.",
+     "min": 0
+    },
+    {
+     "name": "hydrometer_reading",
+     "required": false,
+     "doc": "Hydrometer rows: the reading as taken."
+    },
+    {
+     "name": "temperature_c",
+     "required": false,
+     "doc": "Hydrometer rows: temperature at the reading, degC."
+    },
+    {
+     "name": "composite_correction",
+     "required": false,
+     "doc": "Hydrometer rows: composite correction applied."
+    },
+    {
+     "name": "corrected_reading",
+     "required": false,
+     "doc": "Hydrometer rows: reading after correction."
+    },
+    {
+     "name": "effective_length",
+     "required": false,
+     "doc": "Hydrometer rows: effective length, in the dimension unit.",
+     "min": 0
+    },
+    {
+     "name": "total_dry_mass",
+     "required": false,
+     "doc": "Dry mass of the whole specimen. Raw measurement, in the mass unit on the Project sheet.",
+     "min": 0
+    },
+    {
+     "name": "pan_mass_retained",
+     "required": false,
+     "doc": "Mass retained in the pan. Raw measurement, in the mass unit on the Project sheet.",
+     "min": 0
+    },
+    {
+     "name": "percent_gravel",
+     "required": false,
+     "doc": "Reported percent gravel.",
+     "min": 0,
+     "max": 100
+    },
+    {
+     "name": "percent_sand",
+     "required": false,
+     "doc": "Reported percent sand.",
+     "min": 0,
+     "max": 100
+    },
+    {
+     "name": "percent_silt",
+     "required": false,
+     "doc": "Reported percent silt.",
+     "min": 0,
+     "max": 100
+    },
+    {
+     "name": "percent_clay",
+     "required": false,
+     "doc": "Reported percent clay (finer than 0.002 mm).",
+     "min": 0,
+     "max": 100
+    },
+    {
+     "name": "percent_fines",
+     "required": false,
+     "doc": "Reported percent fines (passing the No. 200 sieve).",
+     "min": 0,
+     "max": 100
+    },
+    {
+     "name": "d10",
+     "required": false,
+     "doc": "Reported D10, mm.",
+     "min": 0
+    },
+    {
+     "name": "d30",
+     "required": false,
+     "doc": "Reported D30, mm.",
+     "min": 0
+    },
+    {
+     "name": "d50",
+     "required": false,
+     "doc": "Reported D50, mm.",
+     "min": 0
+    },
+    {
+     "name": "d60",
+     "required": false,
+     "doc": "Reported D60, mm.",
+     "min": 0
+    },
+    {
+     "name": "cu",
+     "required": false,
+     "doc": "Reported coefficient of uniformity.",
+     "min": 0
+    },
+    {
+     "name": "cc",
+     "required": false,
+     "doc": "Reported coefficient of curvature.",
+     "min": 0
     }
    ],
    "examples": [
@@ -391,6 +726,27 @@
      "3/4 in",
      "19",
      "100",
+     "CL",
+     "Lean clay with sand",
+     "0.0",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "486.2",
+     "362.3",
+     "0.9",
+     "24.5",
+     "50.4",
+     "24.2",
+     "74.6",
+     "",
+     "0.0035",
+     "",
+     "0.0314",
      "",
      ""
     ],
@@ -406,6 +762,27 @@
      "4.75",
      "99.1",
      "",
+     "",
+     "4.4",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
      ""
     ],
     [
@@ -419,6 +796,27 @@
      "No. 10",
      "2",
      "97.6",
+     "",
+     "",
+     "7.3",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
      "",
      ""
     ],
@@ -434,6 +832,27 @@
      "0.425",
      "90.8",
      "",
+     "",
+     "33.1",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
      ""
     ],
     [
@@ -447,6 +866,27 @@
      "No. 200",
      "0.075",
      "74.6",
+     "",
+     "",
+     "79.1",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
      "",
      ""
     ],
@@ -462,6 +902,27 @@
      "0.02",
      "52.4",
      "",
+     "",
+     "",
+     "",
+     "2",
+     "38.5",
+     "21.5",
+     "2.3",
+     "36.2",
+     "120",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
      ""
     ],
     [
@@ -476,6 +937,27 @@
      "0.005",
      "33.5",
      "",
+     "",
+     "",
+     "",
+     "30",
+     "26.0",
+     "21.5",
+     "2.3",
+     "23.7",
+     "120",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
      ""
     ],
     [
@@ -489,6 +971,62 @@
      "",
      "0.002",
      "24.2",
+     "",
+     "",
+     "",
+     "",
+     "1440",
+     "19.5",
+     "21.0",
+     "2.3",
+     "17.1",
+     "120",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     ""
+    ],
+    [
+     "B-1",
+     "S-2",
+     "5",
+     "6.5",
+     "split spoon",
+     "",
+     "pan",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "0.4",
+     "0.0",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
+     "",
      "",
      ""
     ]
@@ -514,6 +1052,35 @@
      "name": "water_temperature_c",
      "required": false,
      "doc": "Test temperature, degC (default 20)"
+    },
+    {
+     "name": "mass_dry_soil",
+     "required": false,
+     "doc": "Dry mass of the soil solids. Raw measurement, in the mass unit on the Project sheet.",
+     "min": 0
+    },
+    {
+     "name": "mass_pyc_water",
+     "required": false,
+     "doc": "Mass of the pycnometer filled with water. Raw measurement, in the mass unit on the Project sheet.",
+     "min": 0
+    },
+    {
+     "name": "mass_pyc_water_soil",
+     "required": false,
+     "doc": "Mass of the pycnometer with water and soil. Raw measurement, in the mass unit on the Project sheet.",
+     "min": 0
+    },
+    {
+     "name": "temperature_water_soil_c",
+     "required": false,
+     "doc": "Temperature of the water and soil, degC."
+    },
+    {
+     "name": "correction_factor",
+     "required": false,
+     "doc": "Temperature correction factor K.",
+     "min": 0
     }
    ],
    "examples": [
@@ -524,7 +1091,12 @@
      "6.5",
      "split spoon",
      "2.68",
-     "20"
+     "20.4",
+     "52.31",
+     "658.42",
+     "691.24",
+     "",
+     "0.9993"
     ]
    ]
   },
@@ -554,6 +1126,36 @@
      "required": false,
      "doc": "Water content of the specimen, %; blank = the sample water content",
      "min": 0
+    },
+    {
+     "name": "specimen_mass",
+     "required": false,
+     "doc": "Mass of the moist specimen. Raw measurement, in the mass unit on the Project sheet.",
+     "min": 0
+    },
+    {
+     "name": "specimen_dry_mass",
+     "required": false,
+     "doc": "Mass of the specimen after drying. Raw measurement, in the mass unit on the Project sheet.",
+     "min": 0
+    },
+    {
+     "name": "diameter",
+     "required": false,
+     "doc": "Specimen diameter, in the dimension unit.",
+     "min": 0
+    },
+    {
+     "name": "height",
+     "required": false,
+     "doc": "Specimen height, in the dimension unit.",
+     "min": 0
+    },
+    {
+     "name": "volume",
+     "required": false,
+     "doc": "Specimen volume, in the volume unit.",
+     "min": 0
     }
    ],
    "examples": [
@@ -564,8 +1166,13 @@
      "12",
      "Shelby tube",
      "122.6",
-     "",
-     "24.1"
+     "98.8",
+     "24.1",
+     "324.7",
+     "261.6",
+     "61.0",
+     "127.0",
+     ""
     ]
    ]
   },
@@ -589,6 +1196,29 @@
      "name": "ignition_temperature_c",
      "required": false,
      "doc": "Furnace temperature, degC (default 440)"
+    },
+    {
+     "name": "mass_dry_before_ignition",
+     "required": false,
+     "doc": "Oven-dry mass before ignition. Raw measurement, in the mass unit on the Project sheet.",
+     "min": 0
+    },
+    {
+     "name": "mass_ash",
+     "required": false,
+     "doc": "Mass of ash after ignition. Raw measurement, in the mass unit on the Project sheet.",
+     "min": 0
+    },
+    {
+     "name": "drying_temperature_c",
+     "required": false,
+     "doc": "Oven temperature, degC."
+    },
+    {
+     "name": "ignition_time_h",
+     "required": false,
+     "doc": "Time held at the ignition temperature, hours.",
+     "min": 0
     }
    ],
    "examples": [
@@ -599,7 +1229,11 @@
      "21.5",
      "split spoon",
      "7.8",
-     "440"
+     "440",
+     "41.62",
+     "38.37",
+     "110",
+     "6"
     ]
    ]
   },
@@ -658,6 +1292,54 @@
      "doc": "Specific gravity used for the zero-air-voids line",
      "min": 1,
      "max": 5
+    },
+    {
+     "name": "wet_density",
+     "required": false,
+     "doc": "Trial wet density, in the density unit.",
+     "min": 0
+    },
+    {
+     "name": "wet_mass_with_mould",
+     "required": false,
+     "doc": "Trial mass of wet soil plus mould. Raw measurement, in the mass unit on the Project sheet.",
+     "min": 0
+    },
+    {
+     "name": "mould_mass",
+     "required": false,
+     "doc": "Mass of the empty mould. Raw measurement, in the mass unit on the Project sheet.",
+     "min": 0
+    },
+    {
+     "name": "mould_volume",
+     "required": false,
+     "doc": "Mould volume, in the volume unit.",
+     "min": 0
+    },
+    {
+     "name": "rammer_mass",
+     "required": false,
+     "doc": "Rammer mass. Raw measurement, in the mass unit on the Project sheet.",
+     "min": 0
+    },
+    {
+     "name": "rammer_drop",
+     "required": false,
+     "doc": "Rammer drop, in the dimension unit.",
+     "min": 0
+    },
+    {
+     "name": "layers",
+     "required": false,
+     "doc": "Number of layers.",
+     "min": 1
+    },
+    {
+     "name": "blows_per_layer",
+     "required": false,
+     "doc": "Blows per layer.",
+     "min": 1
     }
    ],
    "examples": [
@@ -671,9 +1353,17 @@
      "1",
      "11.8",
      "109.6",
+     "114.1",
+     "15.7",
      "",
-     "",
-     ""
+     "122.5",
+     "7452",
+     "4238",
+     "943.9",
+     "2495",
+     "305",
+     "3",
+     "25"
     ],
     [
      "B-1",
@@ -685,6 +1375,14 @@
      "2",
      "13.9",
      "112.8",
+     "",
+     "",
+     "",
+     "128.5",
+     "7452",
+     "4238",
+     "",
+     "",
      "",
      "",
      ""
@@ -701,6 +1399,14 @@
      "114.1",
      "",
      "",
+     "",
+     "132.1",
+     "7452",
+     "4238",
+     "",
+     "",
+     "",
+     "",
      ""
     ],
     [
@@ -715,6 +1421,14 @@
      "112.3",
      "",
      "",
+     "",
+     "132.4",
+     "7452",
+     "4238",
+     "",
+     "",
+     "",
+     "",
      ""
     ],
     [
@@ -727,6 +1441,14 @@
      "5",
      "20.1",
      "108.7",
+     "",
+     "",
+     "",
+     "130.5",
+     "7452",
+     "4238",
+     "",
+     "",
      "",
      "",
      ""
@@ -766,6 +1488,40 @@
      "required": false,
      "doc": "Water-soluble chloride, ppm",
      "min": 0
+    },
+    {
+     "name": "ph_temperature_c",
+     "required": false,
+     "doc": "Temperature at the pH reading, degC."
+    },
+    {
+     "name": "resistance_ohm",
+     "required": false,
+     "doc": "Soil box resistance reading, ohms.",
+     "min": 0
+    },
+    {
+     "name": "soil_box_constant",
+     "required": false,
+     "doc": "Soil box constant, in the dimension unit.",
+     "min": 0
+    },
+    {
+     "name": "electrode_type",
+     "required": false,
+     "doc": "Soil box electrode type, e.g. pin or plate."
+    },
+    {
+     "name": "electrode_spacing",
+     "required": false,
+     "doc": "Electrode spacing, in the dimension unit.",
+     "min": 0
+    },
+    {
+     "name": "water_resistivity_ohm_cm",
+     "required": false,
+     "doc": "Resistivity of the water used, ohm-cm.",
+     "min": 0
     }
    ],
    "examples": [
@@ -778,7 +1534,13 @@
      "6.4",
      "4200",
      "45",
-     "18"
+     "18",
+     "22",
+     "3.5",
+     "1200",
+     "pin",
+     "",
+     ""
     ]
    ]
   }
@@ -840,6 +1602,44 @@
      "g/cm3"
     ],
     "example": "lbm/ft3"
+   },
+   {
+    "key": "mass_unit",
+    "setting": "massUnit",
+    "label": "Mass unit",
+    "doc": "Unit of every raw mass (tare, wet, dry, retained).",
+    "choices": [
+     "g",
+     "kg",
+     "lbm"
+    ],
+    "example": "g"
+   },
+   {
+    "key": "dimension_unit",
+    "setting": "dimensionUnit",
+    "label": "Dimension unit",
+    "doc": "Unit of specimen diameters, heights and lengths.",
+    "choices": [
+     "mm",
+     "cm",
+     "in",
+     "ft"
+    ],
+    "example": "mm"
+   },
+   {
+    "key": "volume_unit",
+    "setting": "volumeUnit",
+    "label": "Volume unit",
+    "doc": "Unit of specimen and mould volumes.",
+    "choices": [
+     "cm3",
+     "mL",
+     "in3",
+     "ft3"
+    ],
+    "example": "cm3"
    }
   ]
  }
