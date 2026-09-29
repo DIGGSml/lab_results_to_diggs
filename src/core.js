@@ -875,12 +875,7 @@ var LabDiggs = (function () {
       var g = cgroups[ck];
       g.trials.sort(function (a, b) { return (a.w == null ? 0 : a.w) - (b.w == null ? 0 : b.w); });
       var mdd = g.mdd, omc = g.omc;
-      if (mdd == null && omc == null) {
-        err(g.where + ': the compaction test for ' + g.smp.boring + ' ' + g.smp.id +
-            ' needs max_dry_density and optimum_water_content as your laboratory reported them. ' +
-            'The trial points are carried through as raw data, but the maximum is not computed here.');
-        return;
-      }
+
       addTest(g.smp, 'compaction', { effort: g.effort, trials: g.trials, mdd: mdd, omc: omc, gs: g.gs,
         mould: { volume: g.mould_volume, mass: g.mould_mass, rammerMass: g.rammer_mass,
                  rammerDrop: g.rammer_drop, layers: g.layers, blows: g.blows_per_layer },
@@ -927,32 +922,43 @@ var LabDiggs = (function () {
       var smp = ds.samples[t.sample];
       var d = t.data;
       var at = smp.boring + ' ' + smp.id;
-      var need = function (what) {
-        err(d.where + ': the ' + testName(t.kind, d).toLowerCase() + ' test for ' + at +
-            ' has raw measurements but no ' + what + '. This tool moves data into DIGGS and does not ' +
-            'compute results: enter the value your laboratory reported.');
+      // A result the lab did not report is written as a null value with the
+      // reason "missing" (DIGGS Property/nullValue), so the raw measurements
+      // behind it still travel in the file. Nothing is computed.
+      var notReported = function (what) {
+        d.notReported = true;
+        warn(d.where + ': no ' + what + ' for the ' + testName(t.kind, d).toLowerCase() + ' test on ' + at +
+             '. The raw measurements are kept and the result is marked "not reported" in the file.');
       };
 
-      if (t.kind === 'water_content' && d.w == null) need('water_content_pct');
-      if (t.kind === 'wash_200' && d.p200 == null) need('percent_passing_200');
-      if (t.kind === 'specific_gravity' && d.gs == null) need('specific_gravity');
-      if (t.kind === 'organic_content' && d.loi == null) need('organic_content_pct');
-      if (t.kind === 'unit_weight' && d.moist == null && d.dry == null) need('moist_density or dry_density');
+      if (t.kind === 'water_content' && d.w == null) notReported('water_content_pct');
+      if (t.kind === 'wash_200' && d.p200 == null) notReported('percent_passing_200');
+      if (t.kind === 'specific_gravity' && d.gs == null) notReported('specific_gravity');
+      if (t.kind === 'organic_content' && d.loi == null) notReported('organic_content_pct');
+      if (t.kind === 'unit_weight' && d.moist == null && d.dry == null) notReported('moist_density or dry_density');
+      if (t.kind === 'compaction' && d.mdd == null && d.omc == null) {
+        notReported('max_dry_density or optimum_water_content');
+      }
+      if (['ph', 'resistivity', 'sulfate', 'chloride'].indexOf(t.kind) >= 0 && d.value == null) {
+        notReported('a reported value');
+      }
 
       if (t.kind === 'atterberg_limits') {
         d.trials = smp.atterbergTrials || [];
-        if (!d.nonPlastic && (d.ll == null || d.pl == null)) {
-          err(d.where + ': the Atterberg test for ' + at + ' needs liquid_limit and plastic_limit, ' +
-              'or non_plastic = TRUE.' + (d.trials.length
-                ? ' The trials are carried through as raw data; the limits themselves are not computed here.' : ''));
-        }
+        if (!d.nonPlastic && (d.ll == null || d.pl == null)) notReported('liquid_limit and plastic_limit');
       }
 
-      if (t.kind === 'gradation' && d.uscsSymbol) {
-        if (USCS_SYMBOLS.indexOf(d.uscsSymbol) < 0) {
-          warn(d.where + ': USCS symbol "' + d.uscsSymbol + '" is not an ASTM D2487 group symbol');
+      if (t.kind === 'gradation') {
+        if (d.uscsSymbol) {
+          if (USCS_SYMBOLS.indexOf(d.uscsSymbol) < 0) {
+            warn(d.where + ': USCS symbol "' + d.uscsSymbol + '" is not an ASTM D2487 group symbol');
+          }
+          d.uscs = { symbol: d.uscsSymbol, name: d.uscsName || null };
         }
-        d.uscs = { symbol: d.uscsSymbol, name: d.uscsName || null };
+        var reportedAny = Object.keys(d.reported).some(function (n) {
+          return n !== 'total_dry_mass' && n !== 'pan_mass_retained';
+        });
+        if (!reportedAny && !d.uscs) notReported('reported percentages, D-values or USCS symbol');
       }
     });
 
@@ -966,9 +972,7 @@ var LabDiggs = (function () {
       if (rows.length) return;
       if (ds.errors.some(function (e) { return e.indexOf(t.data.where) === 0; })) return;
       err(t.data.where + ': the ' + testName(t.kind, t.data).toLowerCase() + ' test for ' + smp.boring +
-          ' ' + smp.id + ' has no reported result, so it cannot be written. DIGGS needs at least ' +
-          'one value in a test, and raw measurements alone are not enough: add the percentages, ' +
-          'D-values or classification your laboratory reported.');
+          ' ' + smp.id + ' holds nothing that can be written to DIGGS.');
     });
 
     // borings: apply page entries for borings first seen in results files,
@@ -1134,9 +1138,33 @@ var LabDiggs = (function () {
   /** (code, propertyName, typeData, uom, value) rows for a test's outcome.
    *  Only values the lab reported (or that it asked this tool to work out)
    *  are written; raw measurements go in the procedure instead. */
+  var NOT_REPORTED = 'notReported';
+
   function results(kind, d, units) {
     var densityUnit = units.density;
     var R = function (code, name, type, uom, value) { return { code: code, name: name, type: type, uom: uom, value: value }; };
+    if (d.notReported) {
+      // the test and its raw data are kept; the result is explicitly null
+      var N = function (code, name, type, uom) {
+        return { code: code, name: name, type: type, uom: uom, value: null, missing: true };
+      };
+      switch (kind) {
+        case 'water_content': return [N('water_content_natural', 'Moisture Content', 'double', '%')];
+        case 'atterberg_limits': return [N('liquid_limit', 'Liquid Limit', 'integer', null),
+                                         N('plastic_limit', 'Plastic Limit', 'integer', null)];
+        case 'wash_200': return [N('percent_fines', 'Percent Passing No. 200 Sieve', 'double', '%')];
+        case 'gradation': return [N('percent_fines', 'Percent Fines', 'double', '%')];
+        case 'specific_gravity': return [N('specific_gravity_solids', 'Specific Gravity of Solids', 'double', null)];
+        case 'unit_weight': return [N('bulk_density', 'Moist Density', 'double', densityUnit)];
+        case 'organic_content': return [N('LOI', 'Organic Content (Loss on Ignition)', 'double', '%')];
+        case 'compaction': return [N('dry_density_max', 'Maximum Dry Density', 'double', densityUnit),
+                                   N('water_content_optimum', 'Optimum Water Content', 'double', '%')];
+        case 'ph': return [N('pH', 'pH', 'double', null)];
+        case 'resistivity': return [N('resistivity', 'Minimum Resistivity', 'double', 'ohm.cm')];
+        case 'sulfate': return [N('sulfate_content', 'Water-Soluble Sulfate', 'double', 'ppm')];
+        case 'chloride': return [N('chloride_content', 'Water-Soluble Chloride', 'double', 'ppm')];
+      }
+    }
     switch (kind) {
       case 'water_content': return [R('water_content_natural', 'Moisture Content', 'double', '%', d.w)];
       case 'atterberg_limits':
@@ -1153,6 +1181,7 @@ var LabDiggs = (function () {
       case 'wash_200': return [R('percent_fines', 'Percent Passing No. 200 Sieve', 'double', '%', d.p200)];
       case 'gradation':
         var g = d.reported, rows = [];
+        // (a gradation with no reported values at all is handled above)
         var pct = [['percent_gravel', 'Percent Gravel'], ['percent_sand', 'Percent Sand'],
                    ['percent_silt', 'Percent Silt'], ['percent_clay', 'Percent Clay (< 2 um)'],
                    ['percent_fines', 'Percent Fines']];
@@ -1197,6 +1226,7 @@ var LabDiggs = (function () {
   }
 
   function fmtValue(r) {
+    if (r.missing) return NOT_REPORTED;
     if (r.type === 'integer') return String(Math.round(r.value));
     if (r.type === 'string' || r.type === 'boolean') return String(r.value);
     return fmt(r.value);
@@ -1485,7 +1515,9 @@ var LabDiggs = (function () {
             E('propertyName', {}, r.name),
             E('typeData', {}, r.type),
             E('propertyClass', { codeSpace: PROPS + '#' + r.code }, r.code),
-            r.uom ? E('uom', {}, r.uom) : null
+            r.uom ? E('uom', {}, r.uom) : null,
+            // the lab did not report this one: name the token that means null
+            r.missing ? E('nullValue', { reason: 'missing' }, NOT_REPORTED) : null
           ]);
         });
         var specs = specList(t.kind, d).map(function (a, i) {

@@ -197,18 +197,24 @@ test('the example rows carry raw measurements and reported results', () => {
     assert.ok(xml.includes(needle), needle);
   }
 });
-test('nothing is computed: a missing result is reported, not filled in', () => {
+test('nothing is computed: a missing result is marked, not filled in', () => {
   const key = 'boring_id,sample_id,top_depth,bottom_depth,sample_type,';
   const ds = L.buildDataset([
+    { name: 'borings.csv', text: 'boring_id,latitude,longitude,ground_elevation,total_depth\nB-1,35.78,-78.64,310,30\n' },
     { name: 'water_content.csv', text: key + 'water_content_pct,tare_mass,wet_mass_with_tare,dry_mass_with_tare\n' +
         'B-1,S-1,2.5,4,,,15.6,128.4,116.0\n' },
     { name: 'atterberg_trials.csv', text: key + 'trial_type,blows,water_content_pct\n' +
         'B-1,S-2,5,6.5,,casagrande,25,32.1\nB-1,S-2,5,6.5,,plastic_limit,,19.0\n' }
   ], {});
-  const all = ds.errors.join(' | ');
-  assert.ok(all.includes('has raw measurements but no water_content_pct'), all);
-  assert.ok(all.includes('needs liquid_limit and plastic_limit'), all);
+  const all = ds.warnings.join(' | ');
+  assert.deepStrictEqual(ds.errors, []);
+  assert.ok(all.includes('no water_content_pct'), all);
+  assert.ok(all.includes('no liquid_limit and plastic_limit'), all);
   assert.ok(!('uscs' in L) && !('gradationSummary' in L) && !('compactionSummary' in L));
+  // the raw data is kept and the result says, in DIGGS terms, "not reported"
+  const xml = L.generateDiggs(ds, { projectName: 'Raw only' });
+  assert.strictEqual((xml.match(/<nullValue reason="missing">notReported<\/nullValue>/g) || []).length, 3);
+  assert.ok(xml.includes('<CasagrandeTrial') && xml.includes('<parameterName>tare_mass</parameterName>'));
 });
 
 console.log('other checks');

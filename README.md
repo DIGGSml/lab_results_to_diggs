@@ -89,9 +89,11 @@ test procedure, where DIGGS has a place for them:
   for as named parameters, verbatim.
 
 Nothing is computed, corrected or rounded. A value the laboratory did not
-report is listed as something to add, never filled in: DIGGS needs at least
-one reported result in a test, so raw measurements alone are refused with a
-message naming what is missing.
+report is marked as not reported rather than filled in: DIGGS needs at least
+one result in a test, so the expected property is written with
+`<nullValue reason="missing">notReported</nullValue>` and that token in the
+data block. A test can therefore travel with its raw measurements alone, and
+the page warns for each one.
 
 ## DIGGS encoding
 
